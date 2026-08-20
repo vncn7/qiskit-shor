@@ -1,0 +1,12 @@
+# IBM Quantum credentials
+.env
+*.qiskit-account*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# Qiskit / job artifacts
+*.qpy
