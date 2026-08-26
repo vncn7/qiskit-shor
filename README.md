@@ -1,21 +1,32 @@
+# Qiskit Shor
+
+Quantum circuits and experiments for the thesis.
+
 ## Run
 
-Build
+Build:
+
 ```bash
-docker build -t qiskit-bell .
-```
-Run on simulator
-```bash
-docker run --rm qiskit-bell
+docker build -t qiskit-shor .
 ```
 
-Run on Real IBM hardware (requires `.env` with `IBM_TOKEN=token`):
+Run a circuit on the simulator:
+
 ```bash
-docker run --rm -e USE_HARDWARE=true --env-file .env qiskit-bell
+docker run --rm qiskit-shor src/bell_state.py
+docker run --rm qiskit-shor src/shor15_general.py
+docker run --rm qiskit-shor src/shor15_compiled.py
 ```
 
-## Expected output
+Run on a noise model of IBM hardware:
 
+```bash
+docker run --rm -e USE_NOISY=true qiskit-shor src/shor15_general.py
 ```
-{'00': 512, '11': 512}  # varies each run
+
+Run on IBM hardware (requires `.env` with `IBM_TOKEN=token`):
+
+```bash
+docker run --rm -e USE_HARDWARE=true --env-file .env qiskit-shor src/shor15_general.py
 ```
+
