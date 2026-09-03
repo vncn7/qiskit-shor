@@ -7,26 +7,43 @@ Quantum circuits and experiments for the thesis.
 Build:
 
 ```bash
-docker build -t qiskit-shor .
+docker compose build
 ```
 
-Run a circuit on the simulator:
+Run a circuit on the ideal simulator:
 
 ```bash
-docker run --rm qiskit-shor src/bell_state.py
-docker run --rm qiskit-shor src/shor15_general.py
-docker run --rm qiskit-shor src/shor15_compiled.py
+docker compose run --rm -e BACKEND_MODE=ideal qiskit-shor src/bell_state.py
+docker compose run --rm -e BACKEND_MODE=ideal qiskit-shor src/shor15_general.py
+docker compose run --rm -e BACKEND_MODE=ideal qiskit-shor src/shor15_compiled.py
 ```
 
-Run on a noise model of IBM hardware:
+Run on an IBM hardware noise model:
 
 ```bash
-docker run --rm -e USE_NOISY=true qiskit-shor src/shor15_general.py
+docker compose run --rm \
+  -e BACKEND_MODE=noisy \
+  -e BACKEND_NAME=ibm_kingston \
+  qiskit-shor src/shor15_general.py
 ```
 
 Run on IBM hardware (requires `.env` with `IBM_TOKEN=token`):
 
 ```bash
-docker run --rm -e USE_HARDWARE=true --env-file .env qiskit-shor src/shor15_general.py
+docker compose run --rm \
+  -e BACKEND_MODE=hardware \
+  -e BACKEND_NAME=ibm_kingston \
+  qiskit-shor src/shor15_general.py
 ```
 
+Available backend modes:
+
+* `ideal` - ideal Aer simulator
+* `noisy` - noise model based on an IBM fake backend
+* `hardware` - real IBM quantum hardware
+
+Available fake backends:
+
+* `ibm_kingston`
+* `ibm_fez`
+* `ibm_marrakesh`

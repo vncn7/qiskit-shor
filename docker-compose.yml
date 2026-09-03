@@ -1,0 +1,8 @@
+services:
+  qiskit-shor:
+    build: .
+    image: qiskit-shor
+    volumes:
+      - ./results:/app/results
+    env_file:
+      - .env

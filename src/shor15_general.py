@@ -6,7 +6,7 @@ from runner import run
 def create_circuit():
     qc = QuantumCircuit(...)
 
-    # Shor circuit goes here
+    # general Shor-15 circuit goes here
 
     qc.measure_all()
     return qc
