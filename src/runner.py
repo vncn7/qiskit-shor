@@ -12,11 +12,9 @@ from qiskit_ibm_runtime import SamplerV2 as Sampler
 
 BACKEND_MODE = os.environ.get("BACKEND_MODE", "ideal").lower()
 BACKEND_NAME = os.environ.get("BACKEND_NAME", "ibm_kingston")
-
-# Sabre layout/routing is stochastic; a fixed seed makes the transpiled circuit
-# deterministic. The simulator itself is deliberately NOT seeded so that
-# repeated runs yield independent samples (needed for error bars).
-SEED_TRANSPILER = 1337
+OPTIMIZATION_LEVEL = int(os.environ.get("OPTIMIZATION_LEVEL", "1"))
+RUN_ID = int(os.environ.get("RUN_ID", "1"))
+SEED_TRANSPILER = 1337  # to get same transpiled circuits per opt level
 
 FAKE_BACKENDS = {
     "ibm_kingston": "FakeKingston",
@@ -24,13 +22,14 @@ FAKE_BACKENDS = {
     "ibm_marrakesh": "FakeMarrakesh",
 }
 
-# Per-qubit calibration parameters to collect from the backend properties.
-# T1/T2 come in microseconds, readout_error is a dimensionless probability.
-QUBIT_PARAMETERS = ("readout_error", "T1", "T2")
+QUBIT_PARAMETERS = (
+    "readout_error",
+    "T1",
+    "T2",
+)  # Calibration parameters used in the analysis
 
 
 def get_backend():
-
     if BACKEND_MODE == "ideal":
         print("Running on: ideal AerSimulator")
         return AerSimulator(), None
@@ -44,7 +43,6 @@ def get_backend():
         )()
 
         print(f"Running on noise model of: {fake_backend.name}")
-
         return AerSimulator.from_backend(fake_backend), fake_backend
 
     if BACKEND_MODE == "hardware":
@@ -56,7 +54,6 @@ def get_backend():
         )
 
         backend = service.backend(BACKEND_NAME)
-
         print(f"Running on hardware: {backend.name}")
         print(f"Calibration timestamp: {backend.properties().last_update_date}")
 
@@ -66,7 +63,6 @@ def get_backend():
 
 
 def transpile_circuit(qc, backend, optimization_level):
-
     pm = generate_preset_pass_manager(
         backend=backend,
         optimization_level=optimization_level,
@@ -77,9 +73,6 @@ def transpile_circuit(qc, backend, optimization_level):
 
 
 def get_physical_qubits(isa):
-    # Physical qubits the circuit ends up on; None on the ideal simulator, which
-    # has no coupling map and therefore no layout.
-
     if isa.layout is None:
         return None
 
@@ -87,15 +80,12 @@ def get_physical_qubits(isa):
 
 
 def circuit_metadata(qc, isa):
-
     return {
         "original": {
             "num_qubits": qc.num_qubits,
             "depth": qc.depth(),
             "gate_counts": dict(qc.count_ops()),
         },
-        # No num_qubits here: on real/fake backends isa.num_qubits is the full
-        # chip width, physical_qubits carries the meaningful info.
         "transpiled": {
             "depth": isa.depth(),
             "gate_counts": dict(isa.count_ops()),
@@ -105,10 +95,6 @@ def circuit_metadata(qc, isa):
 
 
 def get_calibration(properties, isa):
-    """Raw calibration values of the physical qubits the circuit runs on.
-    T1/T2 are in us, readout_error and gate_error are dimensionless probabilities.
-    Aggregation (mean/min/max, histograms) happens in the analysis, not here."""
-
     if properties is None:
         return None
 
@@ -121,7 +107,6 @@ def get_calibration(properties, isa):
             if parameter.name in QUBIT_PARAMETERS:
                 qubits[parameter.name].append(parameter.value)
 
-    # Keyed by gate name (e.g. "sx", "cz"), so 1q/2q gates stay distinguishable.
     gate_errors = {}
 
     for gate in properties.gates:
@@ -132,11 +117,13 @@ def get_calibration(properties, isa):
             if parameter.name == "gate_error":
                 gate_errors.setdefault(gate.gate, []).append(parameter.value)
 
-    return {"qubits": qubits, "gate_errors": gate_errors}
+    return {
+        "qubits": qubits,
+        "gate_errors": gate_errors,
+    }
 
 
 def build_metadata(qc, isa, backend, counts, shots, optimization_level, timestamp):
-
     metadata = {
         "experiment": qc.name,
         "timestamp": timestamp.isoformat(),
@@ -150,6 +137,7 @@ def build_metadata(qc, isa, backend, counts, shots, optimization_level, timestam
             "backend": backend.name,
             "shots": shots,
             "optimization_level": optimization_level,
+            "run_id": RUN_ID,
             "seed_transpiler": SEED_TRANSPILER,
         },
         "circuit": circuit_metadata(qc, isa),
@@ -165,9 +153,6 @@ def build_metadata(qc, isa, backend, counts, shots, optimization_level, timestam
 
 
 def add_backend_details(metadata, noise_backend, isa, job):
-    # Enrich the metadata in place with noise-model, calibration and, on real
-    # hardware, the job identifiers.
-
     if noise_backend is None:
         return
 
@@ -189,17 +174,30 @@ def add_backend_details(metadata, noise_backend, isa, job):
 
 
 def write_result(metadata, name, timestamp):
+    date_folder = timestamp.strftime("%Y%m%d")
+    result_dir = os.path.join("results", date_folder)
+    os.makedirs(result_dir, exist_ok=True)
 
-    os.makedirs("results", exist_ok=True)
+    optimization_level = metadata["execution"]["optimization_level"]
 
-    filename_parts = [name, BACKEND_MODE]
+    filename_parts = [
+        name,
+        BACKEND_MODE,
+    ]
 
     if BACKEND_MODE != "ideal":
         filename_parts.append(BACKEND_NAME)
 
-    filename_parts.append(timestamp.strftime("%Y%m%d_%H%M%S"))
+    filename_parts.append(f"opt{optimization_level}")
+    filename_parts.append(f"run{RUN_ID}")
 
-    filepath = os.path.join("results", "_".join(filename_parts) + ".json")
+    if BACKEND_MODE == "hardware":
+        filename_parts.append(metadata["execution"]["job_id"])
+
+    filepath = os.path.join(
+        result_dir,
+        "_".join(filename_parts) + ".json",
+    )
 
     with open(filepath, "w") as file:
         json.dump(metadata, file, indent=4)
@@ -207,14 +205,17 @@ def write_result(metadata, name, timestamp):
     print(f"Results saved to: {filepath}")
 
 
-def run(qc, shots=1024, optimization_level=1):
-
+def run(qc, shots=1024, optimization_level=OPTIMIZATION_LEVEL):
     if len(qc.cregs) != 1:
         raise ValueError("Runner expects exactly one classical register")
 
     backend, noise_backend = get_backend()
 
-    isa = transpile_circuit(qc, backend, optimization_level)
+    isa = transpile_circuit(
+        qc,
+        backend,
+        optimization_level,
+    )
 
     sampler = Sampler(mode=backend)
     job = sampler.run([isa], shots=shots)
@@ -227,10 +228,26 @@ def run(qc, shots=1024, optimization_level=1):
     timestamp = datetime.now()
 
     metadata = build_metadata(
-        qc, isa, backend, counts, shots, optimization_level, timestamp
+        qc,
+        isa,
+        backend,
+        counts,
+        shots,
+        optimization_level,
+        timestamp,
     )
-    add_backend_details(metadata, noise_backend, isa, job)
 
-    write_result(metadata, qc.name, timestamp)
+    add_backend_details(
+        metadata,
+        noise_backend,
+        isa,
+        job,
+    )
+
+    write_result(
+        metadata,
+        qc.name,
+        timestamp,
+    )
 
     return counts, isa

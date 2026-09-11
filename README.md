@@ -13,9 +13,20 @@ docker compose build
 Run a circuit on the ideal simulator:
 
 ```bash
-docker compose run --rm -e BACKEND_MODE=ideal qiskit-shor src/bell_state.py
-docker compose run --rm -e BACKEND_MODE=ideal qiskit-shor src/shor15_general.py
-docker compose run --rm -e BACKEND_MODE=ideal qiskit-shor src/shor15_compiled.py
+docker compose run --rm \
+  -e BACKEND_MODE=ideal \
+  -e OPTIMIZATION_LEVEL=1 \
+  qiskit-shor src/bell_state.py
+
+docker compose run --rm \
+  -e BACKEND_MODE=ideal \
+  -e OPTIMIZATION_LEVEL=1 \
+  qiskit-shor src/shor15_general.py
+
+docker compose run --rm \
+  -e BACKEND_MODE=ideal \
+  -e OPTIMIZATION_LEVEL=1 \
+  qiskit-shor src/shor15_compiled.py
 ```
 
 Run on an IBM hardware noise model:
@@ -24,6 +35,7 @@ Run on an IBM hardware noise model:
 docker compose run --rm \
   -e BACKEND_MODE=noisy \
   -e BACKEND_NAME=ibm_kingston \
+  -e OPTIMIZATION_LEVEL=1 \
   qiskit-shor src/shor15_general.py
 ```
 
@@ -33,7 +45,16 @@ Run on IBM hardware (requires `.env` with `IBM_TOKEN=token`):
 docker compose run --rm \
   -e BACKEND_MODE=hardware \
   -e BACKEND_NAME=ibm_kingston \
+  -e OPTIMIZATION_LEVEL=1 \
   qiskit-shor src/shor15_general.py
+```
+
+OPTIMIZATION_LEVEL can be set to values from 0 to 3:
+```bash
+-e OPTIMIZATION_LEVEL=0
+-e OPTIMIZATION_LEVEL=1
+-e OPTIMIZATION_LEVEL=2
+-e OPTIMIZATION_LEVEL=3
 ```
 
 Available backend modes:

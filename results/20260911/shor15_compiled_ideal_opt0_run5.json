@@ -1,0 +1,51 @@
+{
+    "experiment": "shor15_compiled",
+    "timestamp": "2026-09-11T13:00:28.829297",
+    "versions": {
+        "qiskit": "2.5.2",
+        "qiskit_aer": "0.17.2",
+        "qiskit_ibm_runtime": "0.49.0"
+    },
+    "execution": {
+        "backend_mode": "ideal",
+        "backend": "aer_simulator",
+        "shots": 1024,
+        "optimization_level": 0,
+        "run_id": 5,
+        "seed_transpiler": 1337
+    },
+    "circuit": {
+        "original": {
+            "num_qubits": 12,
+            "depth": 5,
+            "gate_counts": {
+                "h": 8,
+                "measure": 8,
+                "x": 1,
+                "cM2": 1,
+                "cM4": 1,
+                "qft_dg": 1
+            }
+        },
+        "transpiled": {
+            "depth": 32,
+            "gate_counts": {
+                "cp": 28,
+                "h": 16,
+                "ccx": 15,
+                "measure": 8,
+                "swap": 4,
+                "x": 1
+            },
+            "physical_qubits": null
+        }
+    },
+    "results": {
+        "counts": {
+            "10000000": 260,
+            "11000000": 262,
+            "00000000": 249,
+            "01000000": 253
+        }
+    }
+}
