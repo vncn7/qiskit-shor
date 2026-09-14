@@ -13,14 +13,16 @@ from qiskit_ibm_runtime import SamplerV2 as Sampler
 BACKEND_MODE = os.environ.get("BACKEND_MODE", "ideal").lower()
 BACKEND_NAME = os.environ.get("BACKEND_NAME", "ibm_kingston")
 OPTIMIZATION_LEVEL = int(os.environ.get("OPTIMIZATION_LEVEL", "1"))
-RUN_ID = int(os.environ.get("RUN_ID", "1"))
+RUN_ID = os.environ.get("RUN_ID")
 SEED_TRANSPILER = 1337  # to get same transpiled circuits per opt level
+
 
 FAKE_BACKENDS = {
     "ibm_kingston": "FakeKingston",
     "ibm_fez": "FakeFez",
     "ibm_marrakesh": "FakeMarrakesh",
 }
+
 
 QUBIT_PARAMETERS = (
     "readout_error",
@@ -54,6 +56,7 @@ def get_backend():
         )
 
         backend = service.backend(BACKEND_NAME)
+
         print(f"Running on hardware: {backend.name}")
         print(f"Calibration timestamp: {backend.properties().last_update_date}")
 
@@ -115,7 +118,10 @@ def get_calibration(properties, isa):
 
         for parameter in gate.parameters:
             if parameter.name == "gate_error":
-                gate_errors.setdefault(gate.gate, []).append(parameter.value)
+                gate_errors.setdefault(
+                    gate.gate,
+                    [],
+                ).append(parameter.value)
 
     return {
         "qubits": qubits,
@@ -123,7 +129,15 @@ def get_calibration(properties, isa):
     }
 
 
-def build_metadata(qc, isa, backend, counts, shots, optimization_level, timestamp):
+def build_metadata(
+    qc,
+    isa,
+    backend,
+    counts,
+    shots,
+    optimization_level,
+    timestamp,
+):
     metadata = {
         "experiment": qc.name,
         "timestamp": timestamp.isoformat(),
@@ -137,7 +151,6 @@ def build_metadata(qc, isa, backend, counts, shots, optimization_level, timestam
             "backend": backend.name,
             "shots": shots,
             "optimization_level": optimization_level,
-            "run_id": RUN_ID,
             "seed_transpiler": SEED_TRANSPILER,
         },
         "circuit": circuit_metadata(qc, isa),
@@ -145,6 +158,9 @@ def build_metadata(qc, isa, backend, counts, shots, optimization_level, timestam
             "counts": counts,
         },
     }
+
+    if RUN_ID is not None:
+        metadata["execution"]["run_id"] = int(RUN_ID)
 
     if BACKEND_MODE != "ideal":
         metadata["execution"]["backend_name"] = BACKEND_NAME
@@ -189,15 +205,33 @@ def write_result(metadata, name, timestamp):
         filename_parts.append(BACKEND_NAME)
 
     filename_parts.append(f"opt{optimization_level}")
-    filename_parts.append(f"run{RUN_ID}")
 
+    # RUN_ID is only present for batch runs from experiment.sh
+    if RUN_ID is not None:
+        filename_parts.append(f"run{RUN_ID}")
+
+    # Hardware runs additionally use the IBM job ID
     if BACKEND_MODE == "hardware":
         filename_parts.append(metadata["execution"]["job_id"])
+
+    # Timestamp is always included
+    filename_parts.append(timestamp.strftime("%H%M%S"))
 
     filepath = os.path.join(
         result_dir,
         "_".join(filename_parts) + ".json",
     )
+
+    # For individual runs without RUN_ID, prevent overwriting
+    if RUN_ID is None:
+        run = 1
+
+        while os.path.exists(filepath):
+            filepath = os.path.join(
+                result_dir,
+                "_".join(filename_parts) + f"_run{run}.json",
+            )
+            run += 1
 
     with open(filepath, "w") as file:
         json.dump(metadata, file, indent=4)
@@ -205,7 +239,11 @@ def write_result(metadata, name, timestamp):
     print(f"Results saved to: {filepath}")
 
 
-def run(qc, shots=1024, optimization_level=OPTIMIZATION_LEVEL):
+def run(
+    qc,
+    shots=1024,
+    optimization_level=OPTIMIZATION_LEVEL,
+):
     if len(qc.cregs) != 1:
         raise ValueError("Runner expects exactly one classical register")
 

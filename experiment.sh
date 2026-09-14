@@ -1,6 +1,6 @@
 #!/bin/bash
 
-backend=fez
+backend=marrakesh
 
 # Hardware runs in parallel
 for opt in 0 1 2 3; do
