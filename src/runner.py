@@ -31,31 +31,36 @@ QUBIT_PARAMETERS = (
 )  # Calibration parameters used in the analysis
 
 
+def get_fake_backend(name):
+    from qiskit_ibm_runtime import fake_provider
+
+    return getattr(fake_provider, FAKE_BACKENDS[name])()
+
+
+def get_hardware_backend(name):
+    from qiskit_ibm_runtime import QiskitRuntimeService
+
+    service = QiskitRuntimeService(
+        channel="ibm_quantum_platform",
+        token=os.environ["IBM_TOKEN"],
+    )
+
+    return service.backend(name)
+
+
 def get_backend():
     if BACKEND_MODE == "ideal":
         print("Running on: ideal AerSimulator")
         return AerSimulator(), None
 
     if BACKEND_MODE == "noisy":
-        from qiskit_ibm_runtime import fake_provider
-
-        fake_backend = getattr(
-            fake_provider,
-            FAKE_BACKENDS[BACKEND_NAME],
-        )()
+        fake_backend = get_fake_backend(BACKEND_NAME)
 
         print(f"Running on noise model of: {fake_backend.name}")
         return AerSimulator.from_backend(fake_backend), fake_backend
 
     if BACKEND_MODE == "hardware":
-        from qiskit_ibm_runtime import QiskitRuntimeService
-
-        service = QiskitRuntimeService(
-            channel="ibm_quantum_platform",
-            token=os.environ["IBM_TOKEN"],
-        )
-
-        backend = service.backend(BACKEND_NAME)
+        backend = get_hardware_backend(BACKEND_NAME)
 
         print(f"Running on hardware: {backend.name}")
         print(f"Calibration timestamp: {backend.properties().last_update_date}")
@@ -98,9 +103,6 @@ def circuit_metadata(qc, isa):
 
 
 def get_calibration(properties, isa):
-    if properties is None:
-        return None
-
     physical_qubits = set(get_physical_qubits(isa))
 
     qubits = {name: [] for name in QUBIT_PARAMETERS}
@@ -177,10 +179,7 @@ def add_backend_details(metadata, noise_backend, isa, job):
     if BACKEND_MODE == "noisy":
         metadata["execution"]["noise_model"] = noise_backend.name
 
-    calibration = get_calibration(properties, isa)
-
-    if calibration:
-        metadata["calibration"] = calibration
+    metadata["calibration"] = get_calibration(properties, isa)
 
     if BACKEND_MODE == "hardware":
         metadata["execution"]["job_id"] = job.job_id()
@@ -217,24 +216,21 @@ def write_result(metadata, name, timestamp):
     # Timestamp is always included
     filename_parts.append(timestamp.strftime("%H%M%S"))
 
-    filepath = os.path.join(
-        result_dir,
-        "_".join(filename_parts) + ".json",
-    )
+    basename = "_".join(filename_parts)
+    filepath = os.path.join(result_dir, basename + ".json")
 
-    # For individual runs without RUN_ID, prevent overwriting
-    if RUN_ID is None:
-        run = 1
+    # The timestamp only resolves to seconds, so runs started in parallel
+    # can produce the same name. Mode "x" fails instead of overwriting.
+    duplicate = 1
 
-        while os.path.exists(filepath):
-            filepath = os.path.join(
-                result_dir,
-                "_".join(filename_parts) + f"_run{run}.json",
-            )
-            run += 1
-
-    with open(filepath, "w") as file:
-        json.dump(metadata, file, indent=4)
+    while True:
+        try:
+            with open(filepath, "x") as file:
+                json.dump(metadata, file, indent=4)
+            break
+        except FileExistsError:
+            filepath = os.path.join(result_dir, f"{basename}_dup{duplicate}.json")
+            duplicate += 1
 
     print(f"Results saved to: {filepath}")
 
