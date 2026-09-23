@@ -4,5 +4,6 @@ services:
     image: qiskit-shor
     volumes:
       - ./results:/app/results
+      - ./src/analysis:/app/src/analysis
     env_file:
       - .env

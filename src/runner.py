@@ -37,15 +37,17 @@ def get_fake_backend(name):
     return getattr(fake_provider, FAKE_BACKENDS[name])()
 
 
-def get_hardware_backend(name):
+def get_service():
     from qiskit_ibm_runtime import QiskitRuntimeService
 
-    service = QiskitRuntimeService(
+    return QiskitRuntimeService(
         channel="ibm_quantum_platform",
         token=os.environ["IBM_TOKEN"],
     )
 
-    return service.backend(name)
+
+def get_hardware_backend(name):
+    return get_service().backend(name)
 
 
 def get_backend():
@@ -102,33 +104,71 @@ def circuit_metadata(qc, isa):
     }
 
 
-def get_calibration(properties, isa):
-    physical_qubits = set(get_physical_qubits(isa))
+def qubit_calibration(properties):
+    qubits = []
 
-    qubits = {name: [] for name in QUBIT_PARAMETERS}
+    for index, parameters in enumerate(properties.qubits):
+        values = {
+            parameter.name: parameter.value
+            for parameter in parameters
+            if parameter.name in QUBIT_PARAMETERS
+        }
 
-    for qubit in physical_qubits:
-        for parameter in properties.qubits[qubit]:
-            if parameter.name in QUBIT_PARAMETERS:
-                qubits[parameter.name].append(parameter.value)
+        qubits.append(
+            {
+                "qubit": index,
+                "T1_us": values.get("T1"),
+                "T2_us": values.get("T2"),
+                "readout_error": values.get("readout_error"),
+                "operational": properties.is_qubit_operational(index),
+            }
+        )
 
-    gate_errors = {}
+    return qubits
+
+
+def single_qubit_gate_calibration(properties):
+    gates = []
 
     for gate in properties.gates:
-        if not all(qubit in physical_qubits for qubit in gate.qubits):
+        if gate.gate not in ("sx", "x"):
             continue
 
-        for parameter in gate.parameters:
-            if parameter.name == "gate_error":
-                gate_errors.setdefault(
-                    gate.gate,
-                    [],
-                ).append(parameter.value)
+        values = {parameter.name: parameter.value for parameter in gate.parameters}
 
-    return {
-        "qubits": qubits,
-        "gate_errors": gate_errors,
-    }
+        gates.append(
+            {
+                "gate": gate.gate,
+                "qubit": gate.qubits[0],
+                "gate_error": values.get("gate_error"),
+                "gate_length_ns": values.get("gate_length"),
+                "operational": properties.is_gate_operational(gate.gate, gate.qubits),
+            }
+        )
+
+    return gates
+
+
+def two_qubit_gate_calibration(properties):
+    gates = []
+
+    for gate in properties.gates:
+        if len(gate.qubits) != 2:
+            continue
+
+        values = {parameter.name: parameter.value for parameter in gate.parameters}
+
+        gates.append(
+            {
+                "gate": gate.gate,
+                "qubits": list(gate.qubits),
+                "gate_error": values.get("gate_error"),
+                "gate_length_ns": values.get("gate_length"),
+                "operational": properties.is_gate_operational(gate.gate, gate.qubits),
+            }
+        )
+
+    return gates
 
 
 def build_metadata(
@@ -174,18 +214,19 @@ def add_backend_details(metadata, noise_backend, isa, job):
     if noise_backend is None:
         return
 
-    properties = noise_backend.properties()
-
-    if BACKEND_MODE == "noisy":
+    if BACKEND_MODE == "hardware":
+        properties = job.properties()
+        metadata["execution"]["job_id"] = job.job_id()
+    else:
+        properties = noise_backend.properties()
         metadata["execution"]["noise_model"] = noise_backend.name
 
-    metadata["calibration"] = get_calibration(properties, isa)
-
-    if BACKEND_MODE == "hardware":
-        metadata["execution"]["job_id"] = job.job_id()
-        metadata["execution"]["calibration_timestamp"] = (
-            properties.last_update_date.isoformat()
-        )
+    metadata["calibration"] = {
+        "calibration_timestamp": properties.last_update_date.isoformat(),
+        "qubits": qubit_calibration(properties),
+        "single_qubit_gates": single_qubit_gate_calibration(properties),
+        "two_qubit_gates": two_qubit_gate_calibration(properties),
+    }
 
 
 def write_result(metadata, name, timestamp):

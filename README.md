@@ -67,16 +67,11 @@ the result filename.
 Results land in `results/<date>/` and are moved into a backend subfolder
 by hand afterwards.
 
-## Calibration data
+## Analysis
 
-Pull the current calibration of the hardware backends (T1, T2, readout error
-per qubit; error per two-qubit gate). Writes one dated JSON per backend to
-`results/calibration/`:
+Figures and LaTeX tables are written to `src/analysis/exp1/`:
 
 ```bash
-docker compose run --rm qiskit-shor src/calibration.py
-docker compose run --rm qiskit-shor src/calibration.py ibm_fez
+docker compose run --rm qiskit-shor src/analysis/figures.py
+docker compose run --rm qiskit-shor src/analysis/tables.py
 ```
-
-`BACKEND_MODE=noisy` reads the fake backends' snapshot instead of live
-hardware.
