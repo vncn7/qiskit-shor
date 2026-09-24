@@ -1,0 +1,21 @@
+\begin{table}[h]
+\centering
+\caption{Experiment 1: calibration data of hardware and noise models}
+\label{tab:exp1_calibration}
+\begin{tabularx}{\textwidth}{@{}p{2.2cm}p{2.4cm}*{5}{>{\centering\arraybackslash}X}@{}}
+\toprule
+ & & & & \multicolumn{3}{c}{Error rate} \\
+\cmidrule(l){5-7}
+Device & Source & $T_1$ (\si{\micro\second}) & $T_2$ (\si{\micro\second}) & Readout & SX, X & CZ \\
+\midrule
+Kingston & Hardware & 231 & 143 & 0.0085 & 0.00023 & 0.0020 \\
+ & Noise model & 283 & 144 & 0.0095 & 0.00023 & 0.0018 \\
+\addlinespace
+Fez & Hardware & 134 & 98 & 0.0105 & 0.00033 & 0.0028 \\
+ & Noise model & 145 & 88 & 0.0076 & 0.00023 & 0.0038 \\
+\addlinespace
+Marrakesh & Hardware & 146 & 69 & 0.0105 & 0.00046 & 0.0030 \\
+ & Noise model & 197 & 118 & 0.0095 & 0.00023 & 0.0032 \\
+\bottomrule
+\end{tabularx}
+\end{table}

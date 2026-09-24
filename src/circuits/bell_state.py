@@ -1,5 +1,9 @@
+import os
+import sys
+
 from qiskit import QuantumCircuit
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runner import run
 
 

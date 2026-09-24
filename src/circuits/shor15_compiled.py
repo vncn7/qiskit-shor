@@ -1,6 +1,10 @@
+import os
+import sys
+
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit.circuit.library import QFTGate
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runner import run
 
 

@@ -16,7 +16,7 @@ Run a circuit on the ideal simulator:
 docker compose run --rm \
   -e BACKEND_MODE=ideal \
   -e OPTIMIZATION_LEVEL=1 \
-  qiskit-shor src/bell_state.py
+  qiskit-shor src/circuits/bell_state.py
 ```
 
 Run on an IBM hardware noise model:
@@ -26,7 +26,7 @@ docker compose run --rm \
   -e BACKEND_MODE=noisy \
   -e BACKEND_NAME=ibm_kingston \
   -e OPTIMIZATION_LEVEL=1 \
-  qiskit-shor src/shor15_compiled.py
+  qiskit-shor src/circuits/shor15_compiled.py
 ```
 
 Run on IBM hardware (requires `.env` with `IBM_TOKEN=token`):
@@ -36,7 +36,7 @@ docker compose run --rm \
   -e BACKEND_MODE=hardware \
   -e BACKEND_NAME=ibm_kingston \
   -e OPTIMIZATION_LEVEL=1 \
-  qiskit-shor src/shor15_compiled.py
+  qiskit-shor src/circuits/shor15_compiled.py
 ```
 
 Parameters:
@@ -49,29 +49,25 @@ BACKEND_MODE         ideal       ideal Aer simulator
                      hardware    real IBM quantum hardware
 
 BACKEND_NAME         ibm_kingston | ibm_fez | ibm_marrakesh
-                     (only used for noisy and hardware)
 ```
 
 ## Batch runs
 
-`experiment.sh` runs `shor15_compiled.py` for one backend over all
-optimization levels (0 to 3) with five runs each: on hardware (in
-parallel), on the noise model and on the ideal simulator. The backend is
-set at the top of the script. Every run gets a `RUN_ID`, which ends up in
-the result filename.
+Run on hardware with its noise model for optimization levels 0–3
+(5 runs each, plus 1 ideal run as reference), one container per run.
+Set the backend at the top of the script.
 
 ```bash
 ./experiment.sh
 ```
 
-Results land in `results/<date>/` and are moved into a backend subfolder
-by hand afterwards.
+Results land in `results/<date>/`
 
 ## Analysis
 
-Figures and LaTeX tables are written to `src/analysis/exp1/`:
+Figures and LaTeX tables are written to `src/analysis/experiment1/`:
 
 ```bash
-docker compose run --rm qiskit-shor src/analysis/figures.py
-docker compose run --rm qiskit-shor src/analysis/tables.py
+docker compose run --rm qiskit-shor src/analysis/experiment1/figures.py
+docker compose run --rm qiskit-shor src/analysis/experiment1/tables.py
 ```
