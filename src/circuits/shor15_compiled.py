@@ -8,85 +8,65 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runner import run
 
 
-# Modular multiplication by 2 modulo 15.
-# The swaps implement |y> -> |2y mod 15>.
-def M2mod15():
+# |y> -> |2y mod 15>: multiplying by 2 rotates the four bits by one place
+def multiply_by_2_mod_15():
     gate = QuantumCircuit(4)
-
     gate.swap(2, 3)
     gate.swap(1, 2)
     gate.swap(0, 1)
-
     gate = gate.to_gate()
     gate.name = "M2"
-
     return gate
 
 
-# Modular multiplication by 4 modulo 15.
-# The swaps implement |y> -> |4y mod 15>.
-def M4mod15():
+# |y> -> |4y mod 15>: multiplying by 4 rotates the four bits by two places
+def multiply_by_4_mod_15():
     gate = QuantumCircuit(4)
-
     gate.swap(1, 3)
     gate.swap(0, 2)
-
     gate = gate.to_gate()
     gate.name = "M4"
-
     return gate
 
 
+# Shor's algorithm for N = 15 with base a = 2, compiled by hand: the modular
+# multiplications are swap networks instead of general modular arithmetic.
+# 8 control qubits set the precision of the phase estimation, 4 target
+# qubits hold the values modulo 15.
 def create_circuit():
-    # Shor's algorithm for N = 15 with a = 2.
-    # Eight control qubits provide the precision for phase estimation.
-    # Four target qubits are sufficient to represent the values modulo 15.
     num_control = 8
     num_target = 4
 
-    # Create quantum and classical registers.
     control = QuantumRegister(num_control, "control")
     target = QuantumRegister(num_target, "target")
     output = ClassicalRegister(num_control, "output")
-
     circuit = QuantumCircuit(control, target, output)
+    circuit.name = "shor15_compiled"
 
-    # Initialize the target register to |1>.
+    # Target register starts in |1>
     circuit.x(target[0])
 
-    # Apply phase estimation.
-    # Each control qubit is put into a superposition and controls
-    # a modular multiplication by 2^(2^k) mod 15.
+    # Phase estimation: control qubit k multiplies the target by 2^(2^k) mod 15.
+    # From k = 2 on that is 16 mod 15 = 1, so nothing is left to apply.
     for k in range(num_control):
         circuit.h(control[k])
-
-        # Calculate 2^(2^k) mod 15.
-        b = pow(2, 2**k, 15)
-
-        # Apply the corresponding controlled modular multiplication.
-        if b == 2:
+        multiplier = pow(2, 2**k, 15)
+        if multiplier == 2:
             circuit.compose(
-                M2mod15().control(), qubits=[control[k]] + list(target), inplace=True
+                multiply_by_2_mod_15().control(), qubits=[control[k]] + list(target), inplace=True
+            )
+        elif multiplier == 4:
+            circuit.compose(
+                multiply_by_4_mod_15().control(), qubits=[control[k]] + list(target), inplace=True
             )
 
-        elif b == 4:
-            circuit.compose(
-                M4mod15().control(), qubits=[control[k]] + list(target), inplace=True
-            )
-
-    # Apply the inverse Quantum Fourier Transform to the control register.
-    # This converts the encoded phase information into measurable values.
+    # Inverse QFT turns the phase into a measurable number
     circuit.compose(QFTGate(num_control).inverse(), qubits=control, inplace=True)
-
-    # Measure the control register to obtain the estimated phase.
     circuit.measure(control, output)
 
     return circuit
 
 
 if __name__ == "__main__":
-    qc = create_circuit()
-    qc.name = "shor15_compiled"
-    counts, isa = run(qc, shots=1024)
-
+    counts, isa = run(create_circuit(), shots=1024)
     print(counts)

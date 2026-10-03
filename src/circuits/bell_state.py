@@ -7,18 +7,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runner import run
 
 
+# Smallest circuit to check that the runner and a backend work
 def create_circuit():
     qc = QuantumCircuit(2)
     qc.name = "bell_state"
-
     qc.h(0)
     qc.cx(0, 1)
     qc.measure_all()
-
     return qc
 
 
 if __name__ == "__main__":
-    qc = create_circuit()
-    counts, isa = run(qc)
+    counts, isa = run(create_circuit())
     print(counts)
