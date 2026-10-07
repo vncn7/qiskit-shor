@@ -61,19 +61,6 @@ Set the backend at the top of the script.
 ./experiment.sh
 ```
 
-Results land in `results/<date>/`
-
-## Analysis
-
-Experiment 1 consists of several days, one run of `experiment.sh` per day, each
-with its own calibration of the devices. List the result folders of these
-days in `RESULT_DAYS` in `src/analysis/experiment1/calculations.py`, which
-loads the runs and computes every number; `outputs.py` turns them into the
-figures and tables.
-
-Figures and LaTeX tables are written to `results/experiment1/figures` and
-`results/experiment1/tables`:
-
 ```bash
 docker compose run --rm qiskit-shor src/analysis/experiment1/outputs.py
 ```

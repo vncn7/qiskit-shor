@@ -7,7 +7,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runner import run
 
 
-# Smallest circuit to check that the runner and a backend work
 def create_circuit():
     qc = QuantumCircuit(2)
     qc.name = "bell_state"
