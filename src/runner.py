@@ -17,8 +17,23 @@ BACKEND_MODE = os.environ.get("BACKEND_MODE", "ideal").lower()
 BACKEND_NAME = os.environ.get("BACKEND_NAME", "ibm_kingston")
 OPTIMISATION_LEVEL = int(os.environ.get("OPTIMISATION_LEVEL", "1"))
 RUN_ID = os.environ.get("RUN_ID")
+RESULT_DIR = os.environ.get("RESULT_DIR")  # default: results/<date>
+MITIGATION = os.environ.get("MITIGATION")  # experiment 2 only, see MITIGATIONS
 
 SEED_TRANSPILER = 1337  # same optimisation level --> same transpiled circuit
+
+# Experiment 2: sampler options per configuration, "raw" records that nothing was active
+MITIGATIONS = {
+    "raw": {},
+    "twirling": {"twirling": {"enable_gates": True, "enable_measure": False}},
+    "dd": {"dynamical_decoupling": {"enable": True, "sequence_type": "XY4"}},
+    "both": {
+        "twirling": {"enable_gates": True, "enable_measure": False},
+        "dynamical_decoupling": {"enable": True, "sequence_type": "XY4"},
+    },
+}
+
+SAMPLER_OPTIONS = MITIGATIONS[MITIGATION] if MITIGATION is not None else None  # None: experiment 1
 
 FAKE_BACKENDS = {
     "ibm_kingston": FakeKingston,
@@ -195,6 +210,9 @@ def build_metadata(qc, isa, backend, fake_backend, job, counts, shots, timestamp
     if RUN_ID is not None:
         execution["run_id"] = int(RUN_ID)
 
+    if SAMPLER_OPTIONS is not None:
+        execution["sampler_options"] = SAMPLER_OPTIONS
+
     if BACKEND_MODE != "ideal":
         execution["backend_name"] = BACKEND_NAME
 
@@ -216,7 +234,7 @@ def build_metadata(qc, isa, backend, fake_backend, job, counts, shots, timestamp
 
 # results/<date>/<experiment>_<mode>[_<device>]_opt<level>[_run<id>][_<job id>]_<time>.json
 def result_path(metadata, timestamp):
-    result_dir = os.path.join("results", timestamp.strftime("%Y%m%d"))
+    result_dir = RESULT_DIR or os.path.join("results", timestamp.strftime("%Y%m%d"))
     execution = metadata["execution"]
 
     parts = [metadata["experiment"], BACKEND_MODE]
@@ -246,11 +264,14 @@ def write_result(metadata, timestamp):
 def run(qc, shots=1024):
     if len(qc.cregs) != 1:
         raise ValueError("Runner expects exactly one classical register")
+    # twirling and DD are silently ignored in local testing mode, so refuse them there
+    if SAMPLER_OPTIONS and BACKEND_MODE != "hardware":
+        raise ValueError("Sampler options only take effect on hardware")
 
     backend, fake_backend = get_backend()
     isa = transpile_circuit(qc, backend)
 
-    job = Sampler(mode=backend).run([isa], shots=shots)
+    job = Sampler(mode=backend, options=SAMPLER_OPTIONS).run([isa], shots=shots)
     if BACKEND_MODE == "hardware":
         print(f"Job ID: {job.job_id()}")
     counts = job.result()[0].data[qc.cregs[0].name].get_counts()
