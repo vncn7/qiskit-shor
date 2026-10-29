@@ -1,5 +1,6 @@
 import glob
 import json
+import os
 import statistics
 from collections import Counter
 
@@ -13,12 +14,13 @@ from plot import save, setup_style, to_table
 # Constants and data
 # ---------------------------------------------------------------------------
 
-RESULT_DAYS = ["20260911", "20260924", "20261012"]
-DAY_LABELS = {
-    "20260911": "2026-09-11",
-    "20260924": "2026-09-24",
-    "20261012": "2026-10-12",
-}
+# the only place to add a measurement day
+RESULT_DAYS = ["20260911", "20260924", "20261012", "20261027"]
+
+# "20260911" -> "2026-09-11"
+DAY_LABELS = {}
+for day in RESULT_DAYS:
+    DAY_LABELS[day] = f"{day[:4]}-{day[4:6]}-{day[6:]}"
 
 DEVICES = [
     ("ibm_kingston", "Kingston"),
@@ -35,15 +37,33 @@ DISTRIBUTION_DEVICE = "ibm_kingston"
 DISTRIBUTION_LEVEL = 3
 DISTRIBUTION_DAY = "20260924"
 
+# files every day must have: 3 devices * 4 levels * 5 runs, 1 ideal run per level
+EXPECTED_FILES = {"hardware": 60, "noisy": 60, "ideal": 4}
+
 FIGURES_DIR = "results/experiment1/figures"
 TABLES_DIR = "results/experiment1/tables"
+
+
+# error out if a day is incomplete
+def check_day(day):
+    day_dir = f"results/experiment1/runs/{day}"
+    if not os.path.isdir(day_dir):
+        raise FileNotFoundError(f"{day}: folder {day_dir} does not exist")
+    found = {}
+    for mode in EXPECTED_FILES:
+        found[mode] = len(glob.glob(f"{day_dir}/shor15_compiled_{mode}_*.json"))
+    if found != EXPECTED_FILES:
+        raise ValueError(f"{day}: expected {EXPECTED_FILES}, found {found}")
 
 
 # all result files to one dict epr run
 def load_runs():
     runs = []
     for day in RESULT_DAYS:
-        for path in sorted(glob.glob(f"results/experiment1/runs/{day}/shor15_compiled_*.json")):
+        check_day(day)
+        for path in sorted(
+            glob.glob(f"results/experiment1/runs/{day}/shor15_compiled_*.json")
+        ):
             with open(path) as file:
                 data = json.load(file)
             runs.append(
@@ -68,7 +88,6 @@ def load_runs():
 
 
 # share = 100 * shots on the given outcomes / all shots
-# e.g. 300 of 1024 shots on 0, 64, 128 or 192 -> 29.3 %
 def share(counts, outcomes=IDEAL_OUTCOMES):
     hits = 0
     for outcome in outcomes:
@@ -78,23 +97,23 @@ def share(counts, outcomes=IDEAL_OUTCOMES):
     return 100 * hits / sum(counts.values())
 
 
-# Expected errors per shot (lambda), estimated from the calibration data.
+# Expected errors per shot, estimated from the calibration data
 #
-#   lambda = CZ part + single-qubit part + readout part
+#   expected_errors = CZ part + single-qubit part + readout part
 #
 #   CZ part           = number of CZ gates   * mean CZ error on the used qubits
 #   single-qubit part = number of SX+X gates * mean SX error on the used qubits
 #   readout part      = sum of the readout errors of the 8 measured qubits
 #
-# X gates count as SX gates (IBM lists the same error for both).
-# A gate error of exactly 1 means "broken" in IBM's data and is left out.
+# X gates count as SX gates (IBM lists the same error for both)
+# A gate error == 1 -> means broken and left out
 def expected_errors(run):
     calibration = run["calibration"]
     gate_counts = run["gate_counts"]
     used_qubits = set(run["physical_qubits"])
     measured_qubits = set(
         run["physical_qubits"][:MEASURED_QUBITS]
-    )  # the first 8 qubits are measured, so readout errors are only relevant here
+    )  # the first 8 qubits (counting register) are measured, so readout errors are only relevant here
 
     # mean CZ error on the used qubits
     cz_errors = []
@@ -122,7 +141,7 @@ def expected_errors(run):
         if qubit["qubit"] in measured_qubits:
             readout_errors.append(qubit["readout_error"])
 
-    # the three parts of lambda
+    # the three parts of error expected per shot
     n_cz = gate_counts["cz"]
     n_single = gate_counts["sx"] + gate_counts.get("x", 0)
 
@@ -133,9 +152,7 @@ def expected_errors(run):
     }
 
 
-# One value per metric for the whole chip: the median over all qubits
-# (T1, T2, readout) or all working gates (SX/X, CZ). Median, not mean, so a few
-# broken qubits do not impactthe number.
+# T1, T2, readout and all working gates (SX/X, CZ). Median over the qubits of the chip, ignoring broken gates (error == 1)
 def calibration_medians(calibration):
 
     # T1 of every qubit that has a value
@@ -340,8 +357,10 @@ def figure_error_budget(runs):
         if key not in first_runs:
             first_runs[key] = run
 
-    # 2. calculate: lambda per day, then mean over the days
+    # 2. calculate: lambda per day, then mean over the days;
+    #    spread: standard deviation of the daily sums
     budget = {}  # {(device, level): {"cz": ..., "single_qubit": ..., "readout": ...}}
+    spread = {}  # {(device, level): sd of the sum}
     for device, _ in DEVICES:
         for level in LEVELS:
             per_day = []
@@ -354,6 +373,10 @@ def figure_error_budget(runs):
                     values.append(errors[key])
                 means[key] = statistics.mean(values)
             budget[(device, level)] = means
+            day_sums = []
+            for errors in per_day:
+                day_sums.append(sum(errors.values()))
+            spread[(device, level)] = statistics.stdev(day_sums)
 
     # 3. write
     bar_segments = [
@@ -389,9 +412,24 @@ def figure_error_budget(runs):
                 new_bottom.append(b + h)
             bottom = new_bottom
 
-    axes[0].set_ylabel(r"Expected errors $\lambda$")
+        # bottom is now the top of the stack = mean of the daily sums
+        errors = []
+        for level in LEVELS:
+            errors.append(spread[(device, level)])
+        ax.errorbar(
+            LEVELS,
+            bottom,
+            yerr=errors,
+            fmt="none",
+            ecolor="black",
+            capsize=3,
+            lw=0.8,
+            label="SD across days",
+        )
+
+    axes[0].set_ylabel("Expected errors")
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="outside upper center", ncol=3)
+    fig.legend(handles, labels, loc="outside upper center", ncol=4)
     save(fig, f"{FIGURES_DIR}/error_budget.pdf")
 
 
@@ -499,27 +537,28 @@ def table_share_per_day(runs):
             f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
         )
 
-    # 3. write
+    # 3. write: one row per device and day, levels as columns, so more days
+    #    make the table longer, not wider
     rows = []
     for device, name in DEVICES:
         if rows:
             rows.append(r"\addlinespace")
-        for level in LEVELS:
-            device_cell = name if level == LEVELS[0] else ""
-            row = [device_cell, str(level)]
-            for day in RESULT_DAYS:
+        for day in RESULT_DAYS:
+            device_cell = name if day == RESULT_DAYS[0] else ""
+            row = [device_cell, DAY_LABELS[day]]
+            for level in LEVELS:
                 row.append(cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
-    day_columns = []
-    for day in RESULT_DAYS:
-        day_columns.append(DAY_LABELS[day])
+    level_columns = []
+    for level in LEVELS:
+        level_columns.append(f"Level {level}")
     to_table(
         f"{TABLES_DIR}/share_per_day.tex",
         caption="Share of ideal outcomes in percent on hardware per day "
         "(mean and standard deviation over the runs of the day)",
         label="tab:exp1_share_per_day",
-        column_spec=r"@{}ll*{3}{c}@{}",
-        header=["Device & Level & " + " & ".join(day_columns) + " \\\\"],
+        column_spec=rf"@{{}}ll*{{{len(LEVELS)}}}{{c}}@{{}}",
+        header=["Device & Day & " + " & ".join(level_columns) + " \\\\"],
         rows=rows,
     )
 

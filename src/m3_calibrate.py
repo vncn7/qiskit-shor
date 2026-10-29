@@ -22,7 +22,7 @@ def measured_qubits():
         if data["timestamp"].startswith(TODAY.isoformat()):
             layouts.add(tuple(data["circuit"]["transpiled"]["physical_qubits"][:8]))
     if len(layouts) != 1:
-        raise ValueError(f"{len(layouts)} layouts found for today")
+        raise ValueError(f"Multiple ({len(layouts)}) layouts found for today!")
     return list(layouts.pop())
 
 
@@ -35,5 +35,7 @@ if __name__ == "__main__":
     backend, fake_backend = get_backend()
     mit = mthree.M3Mitigation(fake_backend if BACKEND_MODE == "noisy" else backend)
     # async_cal=False: wait for the job here, otherwise errors end up in a thread
-    mit.cals_from_system(measured_qubits(), shots=10000, async_cal=False, cals_file=cals_file)
+    mit.cals_from_system(
+        measured_qubits(), shots=10000, async_cal=False, cals_file=cals_file
+    )
     print("saved", cals_file)
