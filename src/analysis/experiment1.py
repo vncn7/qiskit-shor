@@ -446,7 +446,7 @@ def figure_error_budget(runs):
                 bottom=bottom,
                 color=colour,
                 edgecolor="white",
-                lw=1,
+                lw=0.5,
                 label=label,
             )
             new_bottom = []
