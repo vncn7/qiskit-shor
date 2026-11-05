@@ -4,7 +4,6 @@ import os
 import statistics
 from collections import Counter
 
-import matplotlib.patheffects
 import matplotlib.pyplot as plt
 
 from plot import save, setup_style, to_table
@@ -242,8 +241,9 @@ def table_transpiled(runs):
 
 def figure_outcomes(runs):
     # 1. collect: pool the counts of the hardware runs per device and level over all days,
-    #    share of the noise model runs per device, level and day
+    #    share of the hardware and noise model runs per device, level and day
     hardware_counts = {}  # {(device, level): Counter}
+    hardware_shares = {}  # {(device, level, day): [share per run]}
     noisy_shares = {}  # {(device, level, day): [share per run]}
     for run in runs:
         key = (run["device"], run["level"])
@@ -251,6 +251,10 @@ def figure_outcomes(runs):
             if key not in hardware_counts:
                 hardware_counts[key] = Counter()
             hardware_counts[key].update(run["counts"])
+            day_key = (run["device"], run["level"], run["day"])
+            if day_key not in hardware_shares:
+                hardware_shares[day_key] = []
+            hardware_shares[day_key].append(share(run["counts"]))
         if run["mode"] == "noisy":
             day_key = (run["device"], run["level"], run["day"])
             if day_key not in noisy_shares:
@@ -258,6 +262,8 @@ def figure_outcomes(runs):
             noisy_shares[day_key].append(share(run["counts"]))
 
     # 2. calculate: share per ideal outcome from the pooled counts, the rest is incorrect;
+    #    hardware spread: standard deviation of the daily means of the ideal share
+    #    (same runs and shots every day, so pooled share = mean of the daily means);
     #    noise model: mean of the runs of a day, then mean over the days
     segments = {}  # {(device, level): {0: ..., 64: ..., 128: ..., 192: ..., "incorrect": ...}}
     for key, counts in hardware_counts.items():
@@ -266,9 +272,16 @@ def figure_outcomes(runs):
             shares[outcome] = share(counts, [outcome])
         shares["incorrect"] = 100 - sum(shares.values())
         segments[key] = shares
+    spread = {}  # {(device, level): sd of the daily means}
     noise_model = {}  # {(device, level): share}
     for device, _ in DEVICES:
         for level in LEVELS:
+            hardware_day_means = []
+            for day in RESULT_DAYS:
+                hardware_day_means.append(
+                    statistics.mean(hardware_shares[(device, level, day)])
+                )
+            spread[(device, level)] = statistics.stdev(hardware_day_means)
             day_means = []
             for day in RESULT_DAYS:
                 day_means.append(statistics.mean(noisy_shares[(device, level, day)]))
@@ -310,33 +323,62 @@ def figure_outcomes(runs):
                 new_bottom.append(b + h)
             bottom = new_bottom
 
-        lines = []
+        # ideal share = top of the four ideal segments, SD across days centred on the bar,
+        # below the noise model marker (lower zorder)
+        ideal_tops = []
+        errors = []
         for level in LEVELS:
-            lines.append(noise_model[(device, level)])
-        ax.hlines(
-            lines,
-            [level - 0.38 for level in LEVELS],
+            ideal_tops.append(100 - segments[(device, level)]["incorrect"])
+            errors.append(spread[(device, level)])
+        ax.errorbar(
+            LEVELS,
+            ideal_tops,
+            yerr=errors,
+            fmt="none",
+            ecolor="black",
+            capsize=2,
+            capthick=0.6,
+            lw=0.6,
+            label="SD across days",
+            zorder=2,
+        )
+
+        # noise model as a triangle right of the bar, pointing at it
+        markers = []
+        for level in LEVELS:
+            markers.append(noise_model[(device, level)])
+        ax.plot(
             [level + 0.38 for level in LEVELS],
-            colors="#52514e",
-            lw=1.0,
+            markers,
+            linestyle="none",
+            marker="<",
+            markersize=4.5,
+            color="#52514e",
             label="Noise model",
             zorder=3,
-            # white outline so the line stays visible on the dark segments
-            path_effects=[
-                matplotlib.patheffects.Stroke(linewidth=2.2, foreground="white"),
-                matplotlib.patheffects.Normal(),
-            ],
         )
 
     axes[0].set_ylabel("Share of shots (%)")
     axes[0].set_ylim(0, 100)
-    # matplotlib lists the line first, move it behind the outcomes
+    # matplotlib lists the line first, so sort the legend by label:
+    # outcomes, incorrect outcomes, noise model, SD across days
     handles, labels = axes[0].get_legend_handles_labels()
+    handle_by_label = {}
+    for handle, label in zip(handles, labels):
+        handle_by_label[label] = handle
+    legend_labels = []
+    for _, label, _ in bar_segments:
+        legend_labels.append(label)
+    legend_labels.append("Noise model")
+    legend_labels.append("SD across days")
+    legend_handles = []
+    for label in legend_labels:
+        legend_handles.append(handle_by_label[label])
     fig.legend(
-        handles[1:] + handles[:1],
-        labels[1:] + labels[:1],
+        legend_handles,
+        legend_labels,
         loc="outside upper center",
-        ncol=3,
+        ncol=4,
     )
     save(fig, f"{FIGURES_DIR}/outcomes.pdf")
 
@@ -422,8 +464,9 @@ def figure_error_budget(runs):
             yerr=errors,
             fmt="none",
             ecolor="black",
-            capsize=3,
-            lw=0.8,
+            capsize=2,
+            capthick=0.6,
+            lw=0.6,
             label="SD across days",
         )
 

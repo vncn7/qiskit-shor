@@ -6,6 +6,5 @@ services:
       - ./results:/app/results
       - ./src/analysis:/app/src/analysis
     env_file:
-      # only hardware runs need it (IBM_TOKEN), so its absence must not fail
       - path: .env
         required: false
