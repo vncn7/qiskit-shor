@@ -40,8 +40,11 @@ def setup_style():
     )
 
 
-# save table as LaTeX; with a width (e.g. \textwidth) as tabular* of that width
-def to_table(path, caption, label, column_spec, header, rows, width=None):
+# save table as LaTeX; with a width (e.g. \textwidth) as tabular* of that width,
+# with a tabcolsep (e.g. 4pt) with that column spacing in this table only
+def to_table(
+    path, caption, label, column_spec, header, rows, width=None, tabcolsep=None
+):
     if width is None:
         begin = rf"\begin{{tabular}}{{{column_spec}}}"
         end = r"\end{tabular}"
@@ -51,6 +54,10 @@ def to_table(path, caption, label, column_spec, header, rows, width=None):
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
+    ]
+    if tabcolsep is not None:
+        lines.append(rf"\setlength{{\tabcolsep}}{{{tabcolsep}}}")
+    lines += [
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
         begin,

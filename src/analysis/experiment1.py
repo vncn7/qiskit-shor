@@ -33,10 +33,9 @@ LEVELS = [0, 1, 2, 3]
 IDEAL_OUTCOMES = [0, 64, 128, 192]
 MEASURED_QUBITS = 8  # the counting register, its qubits come first in the layout
 
-# device, level and day of the full outcome distribution
+# device and level of the full outcome distribution
 DISTRIBUTION_DEVICE = "ibm_kingston"
 DISTRIBUTION_LEVEL = 3
-DISTRIBUTION_DAY = "20261012"
 
 # device and levels of the qubit layout figure, one colour per measurement day
 LAYOUT_DEVICE = "ibm_kingston"
@@ -396,8 +395,6 @@ def figure_outcomes(runs):
 
     axes[0].set_ylabel("Share of shots (%)")
     axes[0].set_ylim(0, 100)
-    # matplotlib lists the line first, so sort the legend by label:
-    # outcomes, incorrect outcomes, noise model, SD across days
     handles, labels = axes[0].get_legend_handles_labels()
     handle_by_label = {}
     for handle, label in zip(handles, labels):
@@ -513,7 +510,7 @@ def figure_error_budget(runs):
 
 
 # ---------------------------------------------------------------------------
-# exp1_distribution.pdf, exp1_distribution_all_days.pdf: distribution over all 256 outcomes,
+# exp1_distribution_all_days.pdf: distribution over all 256 outcomes,
 # Kingston level 3, one panel per day
 # ---------------------------------------------------------------------------
 
@@ -877,7 +874,7 @@ def table_calibration(runs):
         label="tab:exp1_calibration",
         column_spec=r"@{\extracolsep{\fill}}ll*{5}{c}@{}",
         header=[
-            r" & & & & \multicolumn{3}{c}{Error rate} \\",
+            r" & & & & \multicolumn{3}{c}{Error rate $\varepsilon$} \\",
             r"\cmidrule(l){5-7}",
             r"Device & Day & $T_1$ (\si{\micro\second}) & $T_2$ (\si{\micro\second}) & Readout & SX, X & CZ \\",
         ],
@@ -896,7 +893,6 @@ runs = load_runs()
 table_transpiled(runs)
 figure_outcomes(runs)
 figure_error_budget(runs)
-figure_distribution(runs, [DISTRIBUTION_DAY], f"{FIGURES_DIR}/exp1_distribution.pdf")
 figure_distribution(runs, RESULT_DAYS, f"{FIGURES_DIR}/exp1_distribution_all_days.pdf")
 figure_layout(runs)
 table_share_per_day(runs)

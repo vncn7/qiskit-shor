@@ -320,7 +320,7 @@ def table_calibration(runs):
         label="tab:exp2_calibration",
         column_spec=r"@{\extracolsep{\fill}}l*{5}{c}@{}",
         header=[
-            r" & & & \multicolumn{3}{c}{Error rate} \\",
+            r" & & & \multicolumn{3}{c}{Error rate $\varepsilon$} \\",
             r"\cmidrule(l){4-6}",
             r"Day & $T_1$ (\si{\micro\second}) & $T_2$ (\si{\micro\second}) & Readout & SX, X & CZ \\",
         ],
@@ -330,13 +330,12 @@ def table_calibration(runs):
 
 
 # ---------------------------------------------------------------------------
-# readout_per_qubit.tex: readout error of the eight measured qubits per day,
-# from the IBM calibration and from the M3 calibration
+# readout_per_qubit.tex: M3 calibration of the eight measured qubits per day
 # ---------------------------------------------------------------------------
 
 
 def table_readout(runs):
-    # 1. collect: first raw run per day (all runs of a day share circuit and calibration),
+    # 1. collect: first raw run per day (all runs of a day share the circuit),
     #    M3 calibration file per day
     first_runs = {}  # {day: run}
     for run in runs:
@@ -349,42 +348,44 @@ def table_readout(runs):
         with open(f"{RUNS_DIR}/m3_cals_hardware_ibm_kingston_{day}.json") as file:
             m3_cals[day] = json.load(file)["cals"]
 
-    # 2. calculate: per day and measured qubit the IBM readout error and the two
-    #    M3 values, matrix[measured][prepared]: P(1|0) = [1][0], P(0|1) = [0][1]
-    values = {}  # {day: [(qubit, readout error, P(1|0), P(0|1))]}, qubits in layout order
+    # 2. calculate: per day the two M3 error rates of every control register bit
+    #    in layout order, matrix[measured][prepared]:
+    #    0 read as 1 = [1][0], 1 read as 0 = [0][1]
+    cells_0_to_1 = {}  # {day: ["value" per bit]}
+    cells_1_to_0 = {}  # {day: ["value" per bit]}
     for day in RESULT_DAYS:
-        run = first_runs[day]
-        readout_errors = {}  # {qubit: readout error}
-        for qubit in run["calibration"]["qubits"]:
-            readout_errors[qubit["qubit"]] = qubit["readout_error"]
-        values[day] = []
-        for qubit in run["physical_qubits"][:MEASURED_QUBITS]:
+        cells_0_to_1[day] = []
+        cells_1_to_0[day] = []
+        for qubit in first_runs[day]["physical_qubits"][:MEASURED_QUBITS]:
             matrix = m3_cals[day][qubit]
-            values[day].append(
-                (qubit, readout_errors[qubit], matrix[1][0], matrix[0][1])
-            )
+            cells_0_to_1[day].append(f"{matrix[1][0]:.4f}")
+            cells_1_to_0[day].append(f"{matrix[0][1]:.4f}")
 
-    # 3. write: one block per day, one row per control register bit
+    # 3. write: two rows per day, one column per control register bit
     rows = []
     for day in RESULT_DAYS:
         if rows:
             rows.append(r"\midrule")
-        for bit, (qubit, readout_error, p10, p01) in enumerate(values[day]):
-            day_cell = DAY_LABELS[day] if bit == 0 else ""
-            rows.append(
-                f"{day_cell} & $c_{bit}$ & {qubit} & {readout_error:.4f}"
-                f" & {p10:.4f} & {p01:.4f} \\\\"
-            )
+        row = [DAY_LABELS[day], r"$\varepsilon_{0\to1}$"] + cells_0_to_1[day]
+        rows.append(" & ".join(row) + " \\\\")
+        row = ["", r"$\varepsilon_{1\to0}$"] + cells_1_to_0[day]
+        rows.append(" & ".join(row) + " \\\\")
+    bit_columns = []
+    for bit in range(MEASURED_QUBITS):
+        bit_columns.append(f"$c_{bit}$")
     to_table(
         f"{TABLES_DIR}/readout_per_qubit.tex",
-        caption="Experiment 2: Readout error per measured qubit and measurement day",
+        caption="Experiment 2: M3 calibration per measurement day",
         label="tab:exp2_readout",
-        column_spec=r"@{\extracolsep{\fill}}l*{5}{c}@{}",
+        column_spec=rf"@{{\extracolsep{{\fill}}}}ll*{{{MEASURED_QUBITS}}}{{c}}@{{}}",
         header=[
-            r"Day & Bit & Qubit & Calibration & M3 $P(1 \mid 0)$ & M3 $P(0 \mid 1)$ \\",
+            rf" & & \multicolumn{{{MEASURED_QUBITS}}}{{c}}{{Control register bit}} \\",
+            rf"\cmidrule(l){{3-{2 + MEASURED_QUBITS}}}",
+            "Day & & " + " & ".join(bit_columns) + " \\\\",
         ],
         rows=rows,
         width=r"\textwidth",
+        tabcolsep="4pt",
     )
 
 
