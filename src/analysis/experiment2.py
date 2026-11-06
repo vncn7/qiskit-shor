@@ -330,7 +330,66 @@ def table_calibration(runs):
 
 
 # ---------------------------------------------------------------------------
-# outcomes.pdf: mean share of ideal outcomes per configuration, one panel per day
+# readout_per_qubit.tex: readout error of the eight measured qubits per day,
+# from the IBM calibration and from the M3 calibration
+# ---------------------------------------------------------------------------
+
+
+def table_readout(runs):
+    # 1. collect: first raw run per day (all runs of a day share circuit and calibration),
+    #    M3 calibration file per day
+    first_runs = {}  # {day: run}
+    for run in runs:
+        if run["folder"] != "raw":
+            continue
+        if run["day"] not in first_runs:
+            first_runs[run["day"]] = run
+    m3_cals = {}  # {day: [2x2 matrix per physical qubit, None if not calibrated]}
+    for day in RESULT_DAYS:
+        with open(f"{RUNS_DIR}/m3_cals_hardware_ibm_kingston_{day}.json") as file:
+            m3_cals[day] = json.load(file)["cals"]
+
+    # 2. calculate: per day and measured qubit the IBM readout error and the two
+    #    M3 values, matrix[measured][prepared]: P(1|0) = [1][0], P(0|1) = [0][1]
+    values = {}  # {day: [(qubit, readout error, P(1|0), P(0|1))]}, qubits in layout order
+    for day in RESULT_DAYS:
+        run = first_runs[day]
+        readout_errors = {}  # {qubit: readout error}
+        for qubit in run["calibration"]["qubits"]:
+            readout_errors[qubit["qubit"]] = qubit["readout_error"]
+        values[day] = []
+        for qubit in run["physical_qubits"][:MEASURED_QUBITS]:
+            matrix = m3_cals[day][qubit]
+            values[day].append(
+                (qubit, readout_errors[qubit], matrix[1][0], matrix[0][1])
+            )
+
+    # 3. write: one block per day, one row per control register bit
+    rows = []
+    for day in RESULT_DAYS:
+        if rows:
+            rows.append(r"\midrule")
+        for bit, (qubit, readout_error, p10, p01) in enumerate(values[day]):
+            day_cell = DAY_LABELS[day] if bit == 0 else ""
+            rows.append(
+                f"{day_cell} & $c_{bit}$ & {qubit} & {readout_error:.4f}"
+                f" & {p10:.4f} & {p01:.4f} \\\\"
+            )
+    to_table(
+        f"{TABLES_DIR}/readout_per_qubit.tex",
+        caption="Experiment 2: Readout error per measured qubit and measurement day",
+        label="tab:exp2_readout",
+        column_spec=r"@{\extracolsep{\fill}}l*{5}{c}@{}",
+        header=[
+            r"Day & Bit & Qubit & Calibration & M3 $P(1 \mid 0)$ & M3 $P(0 \mid 1)$ \\",
+        ],
+        rows=rows,
+        width=r"\textwidth",
+    )
+
+
+# ---------------------------------------------------------------------------
+# exp2_outcomes.pdf: mean share of ideal outcomes per configuration, one bar per day
 # ---------------------------------------------------------------------------
 
 
@@ -357,33 +416,30 @@ def figure_outcomes(runs):
     names = []
     for name, _, _ in CONFIGURATIONS:
         names.append(name)
-    positions = list(range(len(CONFIGURATIONS)))
-    fig, axes = plt.subplots(
-        1,
-        len(RESULT_DAYS),
-        figsize=(6.2, 2.25),
-        sharey=True,
-        layout="constrained",
-        squeeze=False,  # always a list of panels, even for one day
-    )
-    axes = axes[0]
-    for ax, day in zip(axes, RESULT_DAYS):
-        ax.set_title(DAY_LABELS[day])
-        ax.set_xticks(positions)
-        ax.set_xticklabels(names, fontsize=7)  # at 9 pt "PT+DD" runs into its neighbours
+    day_colours = ["#08306b", "#2171b5", "#6baed6"]  # one per measurement day
+    bar_width = 0.25
+    fig, ax = plt.subplots(figsize=(6.2, 2.5), layout="constrained")
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names)
 
+    # one group per configuration, the bars of the days side by side, centred on the tick
+    for index, day in enumerate(RESULT_DAYS):
+        offset = (index - (len(RESULT_DAYS) - 1) / 2) * bar_width
+        positions = []
         heights = []
         errors = []
-        for name in names:
+        for group, name in enumerate(names):
+            positions.append(group + offset)
             heights.append(means[(name, day)])
             errors.append(spread[(name, day)])
         ax.bar(
             positions,
             heights,
-            0.6,
-            color="#2171b5",
+            bar_width,
+            color=day_colours[index],
             edgecolor="white",
             lw=0.5,
+            label=DAY_LABELS[day],
         )
         ax.errorbar(
             positions,
@@ -396,13 +452,15 @@ def figure_outcomes(runs):
             lw=0.6,
         )
 
-    axes[0].set_ylabel("Share of shots (%)")
-    axes[0].set_ylim(0, 100)
-    save(fig, f"{FIGURES_DIR}/outcomes.pdf")
+    ax.set_ylabel("Share of shots (%)")
+    ax.set_ylim(0, 100)
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="outside upper center", ncol=len(RESULT_DAYS))
+    save(fig, f"{FIGURES_DIR}/exp2_outcomes.pdf")
 
 
 # ---------------------------------------------------------------------------
-# distribution_all_days.pdf: distribution over all 256 outcomes without mitigation,
+# exp2_distribution_all_days.pdf: distribution over all 256 outcomes without mitigation,
 # one panel per day
 # ---------------------------------------------------------------------------
 
@@ -484,6 +542,87 @@ def figure_distribution(runs, days, path):
 
 
 # ---------------------------------------------------------------------------
+# exp2_readout.pdf: readout error of the eight measured qubits per day as heatmap,
+# from the IBM calibration and from the M3 calibration
+# ---------------------------------------------------------------------------
+
+
+def figure_readout(runs):
+    # 1. collect: first raw run per day (all runs of a day share circuit and calibration),
+    #    M3 calibration file per day
+    first_runs = {}  # {day: run}
+    for run in runs:
+        if run["folder"] != "raw":
+            continue
+        if run["day"] not in first_runs:
+            first_runs[run["day"]] = run
+    m3_cals = {}  # {day: [2x2 matrix per physical qubit, None if not calibrated]}
+    for day in RESULT_DAYS:
+        with open(f"{RUNS_DIR}/m3_cals_hardware_ibm_kingston_{day}.json") as file:
+            m3_cals[day] = json.load(file)["cals"]
+
+    # 2. calculate: one row per day, one value per control register bit in layout order;
+    #    IBM readout error, M3 as mean of P(1|0) = [1][0] and P(0|1) = [0][1];
+    #    highest value for the shared colour scale
+    calibration_rows = []  # [[readout error per bit] per day]
+    m3_rows = []  # [[readout error per bit] per day]
+    highest = 0
+    for day in RESULT_DAYS:
+        run = first_runs[day]
+        readout_errors = {}  # {qubit: readout error}
+        for qubit in run["calibration"]["qubits"]:
+            readout_errors[qubit["qubit"]] = qubit["readout_error"]
+        calibration_row = []
+        m3_row = []
+        for qubit in run["physical_qubits"][:MEASURED_QUBITS]:
+            matrix = m3_cals[day][qubit]
+            calibration_row.append(readout_errors[qubit])
+            m3_row.append((matrix[1][0] + matrix[0][1]) / 2)
+        calibration_rows.append(calibration_row)
+        m3_rows.append(m3_row)
+        highest = max(highest, max(calibration_row), max(m3_row))
+
+    # 3. write
+    panels = [
+        ("Calibration data", calibration_rows),
+        ("M3 calibration", m3_rows),
+    ]
+    day_labels = []
+    for day in RESULT_DAYS:
+        day_labels.append(DAY_LABELS[day])
+    bit_labels = []
+    for bit in range(MEASURED_QUBITS):
+        bit_labels.append(f"$c_{bit}$")
+    fig, axes = plt.subplots(
+        2, 1, figsize=(6.2, 2.9), sharex=True, layout="constrained"
+    )
+    for ax, (title, rows) in zip(axes, panels):
+        # aspect "auto": the cells fill the panel instead of being square
+        image = ax.imshow(rows, cmap="Blues", vmin=0, vmax=highest, aspect="auto")
+        ax.set_title(title, loc="left")
+        ax.set_yticks(range(len(RESULT_DAYS)))
+        ax.set_yticklabels(day_labels)
+        ax.grid(False)
+        for row_index, row in enumerate(rows):
+            for column_index, value in enumerate(row):
+                # white text on the dark cells
+                colour = "white" if value > highest / 2 else "#0b0b0b"
+                ax.text(
+                    column_index,
+                    row_index,
+                    f"{value:.3f}",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color=colour,
+                )
+    axes[-1].set_xticks(range(MEASURED_QUBITS))
+    axes[-1].set_xticklabels(bit_labels)
+    fig.colorbar(image, ax=axes, label=r"Readout error $\varepsilon$")
+    save(fig, f"{FIGURES_DIR}/exp2_readout.pdf")
+
+
+# ---------------------------------------------------------------------------
 # Write everything
 # ---------------------------------------------------------------------------
 
@@ -492,7 +631,9 @@ runs = load_runs()
 
 table_share_per_day(runs)
 table_calibration(runs)
+table_readout(runs)
 figure_outcomes(runs)
-figure_distribution(runs, RESULT_DAYS, f"{FIGURES_DIR}/distribution_all_days.pdf")
+figure_distribution(runs, RESULT_DAYS, f"{FIGURES_DIR}/exp2_distribution_all_days.pdf")
+figure_readout(runs)
 
 print("Written to", FIGURES_DIR, "and", TABLES_DIR)

@@ -95,9 +95,9 @@ values from the runs, calculate, write.
 | Function | File | Thesis label |
 |---|---|---|
 | `table_transpiled` | `tables/transpiled.tex` | `tab:exp1_transpiled` |
-| `figure_outcomes` | `figures/outcomes.pdf` | `fig:exp1_outcomes` |
-| `figure_error_budget` | `figures/error_budget.pdf` | `fig:exp1_error_budget` |
-| `figure_distribution` (one day) | `figures/distribution.pdf` | `fig:exp1_distribution` |
-| `figure_distribution` (all days) | `figures/distribution_all_days.pdf` | `fig:exp1_distribution_days` |
+| `figure_outcomes` | `figures/exp1_outcomes.pdf` | `fig:exp1_outcomes` |
+| `figure_error_budget` | `figures/exp1_error_budget.pdf` | `fig:exp1_error_budget` |
+| `figure_distribution` (one day) | `figures/exp1_distribution.pdf` | `fig:exp1_distribution` |
+| `figure_distribution` (all days) | `figures/exp1_distribution_all_days.pdf` | `fig:exp1_distribution_days` |
 | `table_share_per_day` | `tables/share_per_day.tex` | `tab:exp1_share_per_day` |
 | `table_calibration` | `tables/calibration.tex` | `tab:exp1_calibration` |

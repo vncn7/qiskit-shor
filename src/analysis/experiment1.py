@@ -4,6 +4,8 @@ import os
 import statistics
 from collections import Counter
 
+import matplotlib.lines
+import matplotlib.patches
 import matplotlib.pyplot as plt
 
 from plot import save, setup_style, to_table
@@ -35,6 +37,11 @@ MEASURED_QUBITS = 8  # the counting register, its qubits come first in the layou
 DISTRIBUTION_DEVICE = "ibm_kingston"
 DISTRIBUTION_LEVEL = 3
 DISTRIBUTION_DAY = "20261012"
+
+# device and levels of the qubit layout figure, one colour per measurement day
+LAYOUT_DEVICE = "ibm_kingston"
+LAYOUT_LEVELS = [2, 3]
+DAY_COLOURS = ["#0072B2", "#009E73", "#D55E00", "#E69F00", "#CC79A7", "#56B4E9"]
 
 # files every day must have: 3 devices * 4 levels * 5 runs, 1 ideal run per level
 EXPECTED_FILES = {"hardware": 60, "noisy": 60, "ideal": 4}
@@ -193,6 +200,35 @@ def calibration_medians(calibration):
     }
 
 
+# positions of the 156 Heron r2 qubits: 8 rows of 16, connected by 4 bridge
+# qubits between each pair of rows, based on the IBM topology diagram
+def heron_positions():
+    positions = {}  # {qubit: (x, y)}
+    for row in range(8):
+        for column in range(16):
+            positions[20 * row + column] = (column, -2 * row)
+    for gap in range(7):
+        columns = [3, 7, 11, 15] if gap % 2 == 0 else [1, 5, 9, 13]
+        for index, column in enumerate(columns):
+            positions[20 * gap + 16 + index] = (column, -2 * gap - 1)
+    return positions
+
+
+# couplings of the chip: along each row and through the bridge qubits
+def heron_couplings():
+    couplings = []  # [(qubit, qubit)]
+    for row in range(8):
+        for column in range(15):
+            couplings.append((20 * row + column, 20 * row + column + 1))
+    for gap in range(7):
+        columns = [3, 7, 11, 15] if gap % 2 == 0 else [1, 5, 9, 13]
+        for index, column in enumerate(columns):
+            bridge = 20 * gap + 16 + index
+            couplings.append((20 * gap + column, bridge))
+            couplings.append((bridge, 20 * (gap + 1) + column))
+    return couplings
+
+
 # ---------------------------------------------------------------------------
 # transpiled.tex: depth and gate counts of the transpiled circuit per level
 # ---------------------------------------------------------------------------
@@ -235,7 +271,7 @@ def table_transpiled(runs):
 
 
 # ---------------------------------------------------------------------------
-# outcomes.pdf: share of hardware shots per ideal outcome, noise model as line
+# exp1_outcomes.pdf: share of hardware shots per ideal outcome, noise model as line
 # ---------------------------------------------------------------------------
 
 
@@ -380,11 +416,11 @@ def figure_outcomes(runs):
         loc="outside upper center",
         ncol=4,
     )
-    save(fig, f"{FIGURES_DIR}/outcomes.pdf")
+    save(fig, f"{FIGURES_DIR}/exp1_outcomes.pdf")
 
 
 # ---------------------------------------------------------------------------
-# error_budget.pdf: expected errors per shot (lambda) on hardware
+# exp1_error_budget.pdf: expected errors per shot (lambda) on hardware
 # ---------------------------------------------------------------------------
 
 
@@ -473,11 +509,11 @@ def figure_error_budget(runs):
     axes[0].set_ylabel(r"Circuit fault rate $\lambda$")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="outside upper center", ncol=4)
-    save(fig, f"{FIGURES_DIR}/error_budget.pdf")
+    save(fig, f"{FIGURES_DIR}/exp1_error_budget.pdf")
 
 
 # ---------------------------------------------------------------------------
-# distribution.pdf, distribution_all_days.pdf: distribution over all 256 outcomes,
+# exp1_distribution.pdf, exp1_distribution_all_days.pdf: distribution over all 256 outcomes,
 # Kingston level 3, one panel per day
 # ---------------------------------------------------------------------------
 
@@ -558,6 +594,132 @@ def figure_distribution(runs, days, path):
     axes[0].set_ylim(0, 25)
     axes[0].set_yticks([0, 10, 20])
     save(fig, path)
+
+
+# ---------------------------------------------------------------------------
+# exp1_layout_days.pdf: qubits used on Kingston per day at levels 2 and 3
+# ---------------------------------------------------------------------------
+
+
+def figure_layout(runs):
+    # 1. collect: physical qubits of the first hardware run per level and day
+    #    (all runs of a day share the circuit)
+    layouts = {}  # {(level, day): [physical qubits]}
+    for run in runs:
+        if run["mode"] != "hardware" or run["device"] != LAYOUT_DEVICE:
+            continue
+        key = (run["level"], run["day"])
+        if run["level"] in LAYOUT_LEVELS and key not in layouts:
+            layouts[key] = run["physical_qubits"]
+
+    # 2. calculate: which days use each qubit and each coupling,
+    #    a day is stored as its index in RESULT_DAYS
+    positions = heron_positions()
+    couplings = heron_couplings()
+    qubit_days = {}  # {(level, qubit): [day index]}
+    coupling_days = {}  # {(level, (qubit, qubit)): [day index]}
+    for level in LAYOUT_LEVELS:
+        for qubit in positions:
+            days_using = []
+            for index, day in enumerate(RESULT_DAYS):
+                if qubit in layouts[(level, day)]:
+                    days_using.append(index)
+            qubit_days[(level, qubit)] = days_using
+        for a, b in couplings:
+            days_using = []
+            for index, day in enumerate(RESULT_DAYS):
+                layout = layouts[(level, day)]
+                if a in layout and b in layout:
+                    days_using.append(index)
+            coupling_days[(level, (a, b))] = days_using
+
+    # 3. write
+    fig, axes = plt.subplots(
+        1, len(LAYOUT_LEVELS), figsize=(7.5, 3.0), layout="constrained"
+    )
+    radius = 0.28
+    for ax, level in zip(axes, LAYOUT_LEVELS):
+        # the chip in grey
+        for a, b in couplings:
+            (x1, y1), (x2, y2) = positions[a], positions[b]
+            ax.plot([x1, x2], [y1, y2], color="#c8c8c8", lw=1.0, zorder=1)
+        # used couplings, split lengthwise if several days share one
+        for a, b in couplings:
+            days_using = coupling_days[(level, (a, b))]
+            (x1, y1), (x2, y2) = positions[a], positions[b]
+            n = len(days_using)
+            for k, index in enumerate(days_using):
+                offset = (k - (n - 1) / 2) * (0.16 / n)
+                if y1 == y2:
+                    ax.plot(
+                        [x1, x2],
+                        [y1 + offset, y2 + offset],
+                        color=DAY_COLOURS[index],
+                        lw=2.4 / n,
+                        zorder=2,
+                        solid_capstyle="butt",
+                    )
+                else:
+                    ax.plot(
+                        [x1 + offset, x2 + offset],
+                        [y1, y2],
+                        color=DAY_COLOURS[index],
+                        lw=2.4 / n,
+                        zorder=2,
+                        solid_capstyle="butt",
+                    )
+
+        for qubit, (x, y) in positions.items():
+            days_using = qubit_days[(level, qubit)]
+            if not days_using:
+                ax.add_patch(
+                    plt.Circle(
+                        (x, y), radius, fc="white", ec="#b0b0b0", lw=0.5, zorder=3
+                    )
+                )
+                continue
+            n = len(days_using)
+            for k, index in enumerate(days_using):
+                start = 90 + 360 * k / n
+                end = 90 + 360 * (k + 1) / n
+                ax.add_patch(
+                    matplotlib.patches.Wedge(
+                        (x, y),
+                        radius,
+                        start,
+                        end,
+                        fc=DAY_COLOURS[index],
+                        ec="none",
+                        zorder=4,
+                    )
+                )
+            ax.add_patch(
+                plt.Circle((x, y), radius, fc="none", ec="black", lw=0.5, zorder=5)
+            )
+        ax.set_xlim(-0.7, 15.7)
+        ax.set_ylim(-14.7, 0.7)
+        ax.set_aspect("equal")
+        ax.axis("off")
+        ax.set_title(f"Optimisation level {level}", y=-0.1, fontsize=10)
+
+    # legend: one dot per day
+    handles = []
+    for index, day in enumerate(RESULT_DAYS):
+        handles.append(
+            matplotlib.lines.Line2D(
+                [],
+                [],
+                marker="o",
+                ls="none",
+                ms=6,
+                mfc=DAY_COLOURS[index],
+                mec="black",
+                mew=0.5,
+                label=DAY_LABELS[day],
+            )
+        )
+    fig.legend(handles=handles, loc="outside upper center", ncol=len(RESULT_DAYS))
+    save(fig, f"{FIGURES_DIR}/exp1_layout_days.pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -734,8 +896,9 @@ runs = load_runs()
 table_transpiled(runs)
 figure_outcomes(runs)
 figure_error_budget(runs)
-figure_distribution(runs, [DISTRIBUTION_DAY], f"{FIGURES_DIR}/distribution.pdf")
-figure_distribution(runs, RESULT_DAYS, f"{FIGURES_DIR}/distribution_all_days.pdf")
+figure_distribution(runs, [DISTRIBUTION_DAY], f"{FIGURES_DIR}/exp1_distribution.pdf")
+figure_distribution(runs, RESULT_DAYS, f"{FIGURES_DIR}/exp1_distribution_all_days.pdf")
+figure_layout(runs)
 table_share_per_day(runs)
 table_lambda_per_day(runs)
 table_calibration(runs)
