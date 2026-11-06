@@ -34,7 +34,7 @@ MEASURED_QUBITS = 8  # the counting register, its qubits come first in the layou
 # device, level and day of the full outcome distribution
 DISTRIBUTION_DEVICE = "ibm_kingston"
 DISTRIBUTION_LEVEL = 3
-DISTRIBUTION_DAY = "20260924"
+DISTRIBUTION_DAY = "20261012"
 
 # files every day must have: 3 devices * 4 levels * 5 runs, 1 ideal run per level
 EXPECTED_FILES = {"hardware": 60, "noisy": 60, "ideal": 4}
@@ -324,7 +324,7 @@ def figure_outcomes(runs):
             bottom = new_bottom
 
         # ideal share = top of the four ideal segments, SD across days centred on the bar,
-        # below the noise model marker (lower zorder)
+        # above the noise model line (higher zorder)
         ideal_tops = []
         errors = []
         for level in LEVELS:
@@ -340,22 +340,22 @@ def figure_outcomes(runs):
             capthick=0.6,
             lw=0.6,
             label="SD across days",
-            zorder=2,
+            zorder=4,
         )
 
-        # noise model as a triangle right of the bar, pointing at it
-        markers = []
+        # noise model as a thin line as wide as the bar, above the bars, below the error bars
+        lines = []
         for level in LEVELS:
-            markers.append(noise_model[(device, level)])
-        ax.plot(
-            [level + 0.38 for level in LEVELS],
-            markers,
-            linestyle="none",
-            marker="<",
-            markersize=4.5,
-            color="#52514e",
+            lines.append(noise_model[(device, level)])
+        ax.hlines(
+            lines,
+            [level - 0.30 for level in LEVELS],
+            [level + 0.30 for level in LEVELS],
+            colors="#9a9994",
+            lw=1.2,
+            linestyles="solid",
             label="Noise model",
-            zorder=3,
+            zorder=3.5,
         )
 
     axes[0].set_ylabel("Share of shots (%)")
@@ -470,7 +470,7 @@ def figure_error_budget(runs):
             label="SD across days",
         )
 
-    axes[0].set_ylabel("Expected errors")
+    axes[0].set_ylabel(r"Circuit fault rate $\lambda$")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="outside upper center", ncol=4)
     save(fig, f"{FIGURES_DIR}/error_budget.pdf")
@@ -520,7 +520,9 @@ def figure_distribution(runs, days, path):
     fig, axes = plt.subplots(
         len(days),
         1,
-        figsize=(6.2, 1.4 * len(days) + 0.6),
+        # 1.485 per panel + 0.345 for the x-axis label: a panel is equally high
+        # for any number of days
+        figsize=(6.2, 1.485 * len(days) + 0.345),
         sharex=True,
         sharey=True,
         layout="constrained",
@@ -551,9 +553,10 @@ def figure_distribution(runs, days, path):
     axes[-1].set_xlabel("Measured outcome")
     axes[-1].set_xlim(-4, 259)  # room for the label on outcome 0
     axes[-1].set_xticks(IDEAL_OUTCOMES + [255])
-    axes[0].set_ylim(
-        0, 5 * (highest // 5 + 1)
-    )  # room for the label on the highest peak
+    # fixed y-axis, the same in experiment 1 and 2 (the ideal circuit gives 25 % per outcome)
+    assert highest < 25, "a peak does not fit on the y-axis"
+    axes[0].set_ylim(0, 25)
+    axes[0].set_yticks([0, 10, 20])
     save(fig, path)
 
 
@@ -585,7 +588,7 @@ def table_share_per_day(runs):
     rows = []
     for device, name in DEVICES:
         if rows:
-            rows.append(r"\addlinespace")
+            rows.append(r"\midrule")
         for day in RESULT_DAYS:
             device_cell = name if day == RESULT_DAYS[0] else ""
             row = [device_cell, DAY_LABELS[day]]
@@ -597,12 +600,66 @@ def table_share_per_day(runs):
         level_columns.append(f"Level {level}")
     to_table(
         f"{TABLES_DIR}/share_per_day.tex",
-        caption="Share of ideal outcomes in percent on hardware per day "
-        "(mean and standard deviation over the runs of the day)",
+        caption="Experiment 1: Ideal share per measurement day",
         label="tab:exp1_share_per_day",
-        column_spec=rf"@{{}}ll*{{{len(LEVELS)}}}{{c}}@{{}}",
-        header=["Device & Day & " + " & ".join(level_columns) + " \\\\"],
+        column_spec=rf"@{{\extracolsep{{\fill}}}}ll*{{{len(LEVELS)}}}{{c}}@{{}}",
+        header=[
+            rf" & & \multicolumn{{{len(LEVELS)}}}{{c}}{{Ideal share $S$ (\%)}} \\",
+            rf"\cmidrule(l){{3-{2 + len(LEVELS)}}}",
+            "Device & Day & " + " & ".join(level_columns) + " \\\\",
+        ],
         rows=rows,
+        width=r"\textwidth",
+    )
+
+
+# ---------------------------------------------------------------------------
+# lambda_per_day.tex: circuit fault rate on hardware per device, level and day
+# ---------------------------------------------------------------------------
+
+
+def table_lambda_per_day(runs):
+    # 1. collect: first hardware run per device, level and day
+    #    (all runs of a day share circuit and calibration)
+    first_runs = {}  # {(device, level, day): run}
+    for run in runs:
+        if run["mode"] != "hardware":
+            continue
+        key = (run["device"], run["level"], run["day"])
+        if key not in first_runs:
+            first_runs[key] = run
+
+    # 2. calculate: lambda = sum of the CZ, single-qubit and readout parts
+    cells = {}  # {(device, level, day): "$lambda$"}
+    for key, run in first_runs.items():
+        cells[key] = f"${sum(expected_errors(run).values()):.2f}$"
+
+    # 3. write: one row per device and day, levels as columns
+    rows = []
+    for device, name in DEVICES:
+        if rows:
+            rows.append(r"\midrule")
+        for day in RESULT_DAYS:
+            device_cell = name if day == RESULT_DAYS[0] else ""
+            row = [device_cell, DAY_LABELS[day]]
+            for level in LEVELS:
+                row.append(cells[(device, level, day)])
+            rows.append(" & ".join(row) + " \\\\")
+    level_columns = []
+    for level in LEVELS:
+        level_columns.append(f"Level {level}")
+    to_table(
+        f"{TABLES_DIR}/lambda_per_day.tex",
+        caption="Experiment 1: Circuit fault rate per measurement day",
+        label="tab:exp1_lambda_per_day",
+        column_spec=rf"@{{\extracolsep{{\fill}}}}ll*{{{len(LEVELS)}}}{{c}}@{{}}",
+        header=[
+            rf" & & \multicolumn{{{len(LEVELS)}}}{{c}}{{Circuit fault rate $\lambda$}} \\",
+            rf"\cmidrule(l){{3-{2 + len(LEVELS)}}}",
+            "Device & Day & " + " & ".join(level_columns) + " \\\\",
+        ],
+        rows=rows,
+        width=r"\textwidth",
     )
 
 
@@ -640,7 +697,7 @@ def table_calibration(runs):
     rows = []
     for device, name in DEVICES:
         if rows:
-            rows.append(r"\addlinespace")
+            rows.append(r"\midrule")
         sources = []
         for day in RESULT_DAYS:
             sources.append(DAY_LABELS[day])
@@ -654,15 +711,16 @@ def table_calibration(runs):
             )
     to_table(
         f"{TABLES_DIR}/calibration.tex",
-        caption="Calibration data of the hardware per day and of the noise model",
+        caption="Experiment 1: Calibration data per measurement day",
         label="tab:exp1_calibration",
-        column_spec=r"@{}ll*{5}{c}@{}",
+        column_spec=r"@{\extracolsep{\fill}}ll*{5}{c}@{}",
         header=[
             r" & & & & \multicolumn{3}{c}{Error rate} \\",
             r"\cmidrule(l){5-7}",
             r"Device & Day & $T_1$ (\si{\micro\second}) & $T_2$ (\si{\micro\second}) & Readout & SX, X & CZ \\",
         ],
         rows=rows,
+        width=r"\textwidth",
     )
 
 
@@ -679,6 +737,7 @@ figure_error_budget(runs)
 figure_distribution(runs, [DISTRIBUTION_DAY], f"{FIGURES_DIR}/distribution.pdf")
 figure_distribution(runs, RESULT_DAYS, f"{FIGURES_DIR}/distribution_all_days.pdf")
 table_share_per_day(runs)
+table_lambda_per_day(runs)
 table_calibration(runs)
 
 print("Written to", FIGURES_DIR, "and", TABLES_DIR)

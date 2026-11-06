@@ -40,20 +40,26 @@ def setup_style():
     )
 
 
-# save table as LaTeX
-def to_table(path, caption, label, column_spec, header, rows):
+# save table as LaTeX; with a width (e.g. \textwidth) as tabular* of that width
+def to_table(path, caption, label, column_spec, header, rows, width=None):
+    if width is None:
+        begin = rf"\begin{{tabular}}{{{column_spec}}}"
+        end = r"\end{tabular}"
+    else:
+        begin = rf"\begin{{tabular*}}{{{width}}}{{{column_spec}}}"
+        end = r"\end{tabular*}"
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
-        rf"\begin{{tabular}}{{{column_spec}}}",
+        begin,
         r"\toprule",
         *header,
         r"\midrule",
         *rows,
         r"\bottomrule",
-        r"\end{tabular}",
+        end,
         r"\end{table}",
     ]
     os.makedirs(os.path.dirname(path), exist_ok=True)
