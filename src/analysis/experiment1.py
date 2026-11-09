@@ -720,20 +720,27 @@ def figure_layout(runs):
 
 
 # ---------------------------------------------------------------------------
-# share_per_day.tex: share of ideal outcomes on hardware per device, level and day
+# share_per_day.tex: share of ideal outcomes on hardware per device, level and day,
+# plus the noise model
 # ---------------------------------------------------------------------------
 
 
 def table_share_per_day(runs):
-    # 1. collect: share per hardware run by device, level and day
+    # 1. collect: share per hardware run by device, level and day,
+    #    share per noise model run by device and level (all days together)
     shares = {}  # {(device, level, day): [share per run]}
+    noisy_shares = {}  # {(device, level): [share per run]}
     for run in runs:
-        if run["mode"] != "hardware":
-            continue
-        key = (run["device"], run["level"], run["day"])
-        if key not in shares:
-            shares[key] = []
-        shares[key].append(share(run["counts"]))
+        if run["mode"] == "hardware":
+            key = (run["device"], run["level"], run["day"])
+            if key not in shares:
+                shares[key] = []
+            shares[key].append(share(run["counts"]))
+        if run["mode"] == "noisy":
+            key = (run["device"], run["level"])
+            if key not in noisy_shares:
+                noisy_shares[key] = []
+            noisy_shares[key].append(share(run["counts"]))
 
     # 2. calculate: mean and standard deviation over the runs of a day
     cells = {}  # {(device, level, day): "$mean \pm sd$"}
@@ -741,9 +748,13 @@ def table_share_per_day(runs):
         cells[key] = (
             f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
         )
+    noisy_cells = {}  # {(device, level): "$mean \pm sd$"}
+    for key, values in noisy_shares.items():
+        noisy_cells[key] = (
+            f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
+        )
 
-    # 3. write: one row per device and day, levels as columns, so more days
-    #    make the table longer, not wider
+    # 3. write
     rows = []
     for device, name in DEVICES:
         if rows:
@@ -754,6 +765,10 @@ def table_share_per_day(runs):
             for level in LEVELS:
                 row.append(cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
+        row = ["", "Noise model"]
+        for level in LEVELS:
+            row.append(noisy_cells[(device, level)])
+        rows.append(" & ".join(row) + " \\\\")
     level_columns = []
     for level in LEVELS:
         level_columns.append(f"Level {level}")
@@ -773,27 +788,37 @@ def table_share_per_day(runs):
 
 
 # ---------------------------------------------------------------------------
-# lambda_per_day.tex: circuit fault rate on hardware per device, level and day
+# lambda_per_day.tex: circuit fault rate on hardware per device, level and day,
+# plus the noise model
 # ---------------------------------------------------------------------------
 
 
 def table_lambda_per_day(runs):
     # 1. collect: first hardware run per device, level and day
-    #    (all runs of a day share circuit and calibration)
+    #    (all runs of a day share circuit and calibration),
+    #    first noise model run per device and level
+    #    (all its runs share circuit and calibration, the snapshot is fixed)
     first_runs = {}  # {(device, level, day): run}
+    first_noisy_runs = {}  # {(device, level): run}
     for run in runs:
-        if run["mode"] != "hardware":
-            continue
-        key = (run["device"], run["level"], run["day"])
-        if key not in first_runs:
-            first_runs[key] = run
+        if run["mode"] == "hardware":
+            key = (run["device"], run["level"], run["day"])
+            if key not in first_runs:
+                first_runs[key] = run
+        if run["mode"] == "noisy":
+            key = (run["device"], run["level"])
+            if key not in first_noisy_runs:
+                first_noisy_runs[key] = run
 
     # 2. calculate: lambda = sum of the CZ, single-qubit and readout parts
     cells = {}  # {(device, level, day): "$lambda$"}
     for key, run in first_runs.items():
         cells[key] = f"${sum(expected_errors(run).values()):.2f}$"
+    noisy_cells = {}  # {(device, level): "$lambda$"}
+    for key, run in first_noisy_runs.items():
+        noisy_cells[key] = f"${sum(expected_errors(run).values()):.2f}$"
 
-    # 3. write: one row per device and day, levels as columns
+    # 3. write: one row per device and day, levels as columns; the noise model after the days
     rows = []
     for device, name in DEVICES:
         if rows:
@@ -804,6 +829,10 @@ def table_lambda_per_day(runs):
             for level in LEVELS:
                 row.append(cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
+        row = ["", "Noise model"]
+        for level in LEVELS:
+            row.append(noisy_cells[(device, level)])
+        rows.append(" & ".join(row) + " \\\\")
     level_columns = []
     for level in LEVELS:
         level_columns.append(f"Level {level}")

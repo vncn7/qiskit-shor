@@ -175,5 +175,5 @@ def create_circuit():
 
 
 if __name__ == "__main__":
-    counts, isa = run(create_circuit(), shots=64)
+    counts, isa = run(create_circuit(), shots=1024)
     print(counts)
