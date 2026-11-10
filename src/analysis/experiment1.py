@@ -16,7 +16,7 @@ from plot import save, setup_style, to_table
 # ---------------------------------------------------------------------------
 
 # the only place to add a measurement day
-RESULT_DAYS = ["20260911", "20260924", "20261012", "20261027"]
+RESULT_DAYS = ["20260911", "20260924", "20261012", "20261027", "20261110"]
 
 # "20260911" -> "2026-09-11"
 DAY_LABELS = {}
@@ -40,7 +40,7 @@ DISTRIBUTION_LEVEL = 3
 # device and levels of the qubit layout figure, one colour per measurement day
 LAYOUT_DEVICE = "ibm_kingston"
 LAYOUT_LEVELS = [2, 3]
-DAY_COLOURS = ["#0072B2", "#009E73", "#D55E00", "#E69F00", "#CC79A7", "#56B4E9"]
+DAY_COLOURS = ["#0072B2", "#009E73", "#D55E00", "#E69F00", "#762A83", "#56B4E9"]
 
 # files every day must have: 3 devices * 4 levels * 5 runs, 1 ideal run per level
 EXPECTED_FILES = {"hardware": 60, "noisy": 60, "ideal": 4}

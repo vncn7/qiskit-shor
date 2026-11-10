@@ -79,3 +79,32 @@ def save(fig, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fig.savefig(path)
     plt.close(fig)
+
+
+# values behind a figure as text next to the PDF: figure.pdf -> figure.txt
+def save_values(path, values):
+    txt_path = os.path.splitext(path)[0] + ".txt"
+    with open(txt_path, "w") as file:
+        # one block per dict, one line per entry
+        for name, entries in values.items():
+            file.write(f"{name}\n")
+            for key, value in entries.items():
+                file.write(f"  {key}: {rounded(value)}\n")
+            file.write("\n")
+
+
+# round all numbers in nested dicts and lists to 3 decimals
+def rounded(value):
+    if isinstance(value, float):
+        return round(value, 3)
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            result[key] = rounded(item)
+        return result
+    if isinstance(value, list):
+        result = []
+        for item in value:
+            result.append(rounded(item))
+        return result
+    return value

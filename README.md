@@ -83,6 +83,8 @@ and `both`. The counts stay as they are.
 
 `src/analysis/experiment1.py` reads the result files in `results/experiment1/runs/<date>/` and
 writes the figures and tables of the thesis to `results/experiment1/`.
+`src/analysis/figures.py` writes the estimates figure
+(`estimates.pdf`) to `results/other/`.
 `src/analysis/plot.py` holds the shared helpers (style, table writer, save).
 
 ```bash

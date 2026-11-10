@@ -110,7 +110,7 @@ for key, _, colour in ARCHITECTURES:
 
 MARKER = {"RSA": "s", "ECC": "o"}
 
-FIGURES_DIR = "results/state_of_research"
+FIGURES_DIR = "results/other"
 
 
 # ---------------------------------------------------------------------------

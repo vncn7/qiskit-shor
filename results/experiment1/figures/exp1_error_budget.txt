@@ -1,0 +1,28 @@
+budget
+  ('ibm_kingston', 0): {'cz': 1.865, 'single_qubit': 0.338, 'readout': 0.084}
+  ('ibm_kingston', 1): {'cz': 0.561, 'single_qubit': 0.182, 'readout': 0.077}
+  ('ibm_kingston', 2): {'cz': 0.428, 'single_qubit': 0.144, 'readout': 0.061}
+  ('ibm_kingston', 3): {'cz': 0.348, 'single_qubit': 0.123, 'readout': 0.071}
+  ('ibm_fez', 0): {'cz': 2.143, 'single_qubit': 0.639, 'readout': 0.194}
+  ('ibm_fez', 1): {'cz': 0.887, 'single_qubit': 0.219, 'readout': 0.108}
+  ('ibm_fez', 2): {'cz': 0.591, 'single_qubit': 0.163, 'readout': 0.099}
+  ('ibm_fez', 3): {'cz': 0.537, 'single_qubit': 0.145, 'readout': 0.055}
+  ('ibm_marrakesh', 0): {'cz': 1.403, 'single_qubit': 0.383, 'readout': 0.138}
+  ('ibm_marrakesh', 1): {'cz': 0.861, 'single_qubit': 0.301, 'readout': 0.219}
+  ('ibm_marrakesh', 2): {'cz': 0.579, 'single_qubit': 0.216, 'readout': 0.206}
+  ('ibm_marrakesh', 3): {'cz': 0.513, 'single_qubit': 0.194, 'readout': 0.09}
+
+spread
+  ('ibm_kingston', 0): 0.16
+  ('ibm_kingston', 1): 0.077
+  ('ibm_kingston', 2): 0.087
+  ('ibm_kingston', 3): 0.033
+  ('ibm_fez', 0): 0.151
+  ('ibm_fez', 1): 0.455
+  ('ibm_fez', 2): 0.091
+  ('ibm_fez', 3): 0.025
+  ('ibm_marrakesh', 0): 0.384
+  ('ibm_marrakesh', 1): 0.304
+  ('ibm_marrakesh', 2): 0.194
+  ('ibm_marrakesh', 3): 0.042
+
