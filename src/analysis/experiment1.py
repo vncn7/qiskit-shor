@@ -5,6 +5,7 @@ import os
 import statistics
 from collections import Counter
 
+import matplotlib.legend_handler
 import matplotlib.lines
 import matplotlib.patches
 import matplotlib.pyplot as plt
@@ -275,6 +276,39 @@ def table_transpiled(runs):
 # ---------------------------------------------------------------------------
 
 
+def equal_dashes(x0, width, n_dashes=4, dash_ratio=2.6 / 1.6):
+    # [(start, end)] of n equal dashes from x0 to x0 + width, so that the line
+    # starts and ends with a full dash (dash_ratio = dash length : gap length)
+    gap = width / (n_dashes * dash_ratio + (n_dashes - 1))
+    dash = gap * dash_ratio
+    dashes = []
+    for i in range(n_dashes):
+        start = x0 + i * (dash + gap)
+        dashes.append((start, start + dash))
+    return dashes
+
+
+class EqualDashesHandler(matplotlib.legend_handler.HandlerBase):
+    # legend entry for a Line2D drawn as equal_dashes over the handle length
+    def create_artists(
+        self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans
+    ):
+        y = height / 2 - ydescent
+        artists = []
+        for start, end in equal_dashes(-xdescent, width, n_dashes=3):
+            artists.append(
+                matplotlib.lines.Line2D(
+                    [start, end],
+                    [y, y],
+                    color=orig_handle.get_color(),
+                    lw=orig_handle.get_linewidth(),
+                    solid_capstyle="butt",
+                    transform=trans,
+                )
+            )
+        return artists
+
+
 def figure_outcomes(runs):
     # 1. collect: pool the counts of the hardware runs per device and level over all days,
     #    share of the hardware and noise model runs per device, level and day,
@@ -358,8 +392,7 @@ def figure_outcomes(runs):
                 0.6,
                 bottom=bottom,
                 color=colour,
-                edgecolor="white",
-                lw=0.5,
+                lw=0,
                 label=label,
             )
             new_bottom = []
@@ -387,26 +420,39 @@ def figure_outcomes(runs):
             zorder=4,
         )
 
-        # the two predictions as thin lines as wide as the bar, above the bars,
+        # the two predictions as thin lines slightly wider than the bar, above the bars,
         # below the error bars
-        predictions = [
-            (noise_model, "Noise model", "#D55E00", "solid"),
-            (exp_lambda, r"$e^{-\lambda}$", "#D55E00", (0, (2.6, 1.6))),
-        ]
-        for values, label, colour, style in predictions:
-            lines = []
-            for level in LEVELS:
-                lines.append(values[(device, level)])
-            ax.hlines(
-                lines,
-                [level - 0.30 for level in LEVELS],
-                [level + 0.30 for level in LEVELS],
-                colors=colour,
-                lw=1.4,
-                linestyles=style,
-                label=label,
-                zorder=3.5,
-            )
+        noise_lines = []
+        for level in LEVELS:
+            noise_lines.append(noise_model[(device, level)])
+        ax.hlines(
+            noise_lines,
+            [level - 0.35 for level in LEVELS],
+            [level + 0.35 for level in LEVELS],
+            colors="#D55E00",
+            lw=1.4,
+            capstyle="butt",
+            label="Noise model",
+            zorder=3.5,
+        )
+
+        # e^-lambda dashed: explicit dashes in data coordinates so that the line
+        # starts and ends with a full dash (all dashes equal)
+        ys, x_starts, x_ends = [], [], []
+        for level in LEVELS:
+            for start, end in equal_dashes(level - 0.35, 0.70):
+                ys.append(exp_lambda[(device, level)])
+                x_starts.append(start)
+                x_ends.append(end)
+        ax.hlines(
+            ys,
+            x_starts,
+            x_ends,
+            colors="#D55E00",
+            lw=1.4,
+            capstyle="butt",
+            zorder=3.5,
+        )
 
     axes[0].set_ylabel("Share of shots (%)")
     axes[0].set_ylim(0, 100)
@@ -414,6 +460,8 @@ def figure_outcomes(runs):
     handle_by_label = {}
     for handle, label in zip(handles, labels):
         handle_by_label[label] = handle
+    exp_lambda_handle = matplotlib.lines.Line2D([], [], color="#D55E00", lw=1.4)
+    handle_by_label[r"$e^{-\lambda}$"] = exp_lambda_handle
     legend_labels = []
     for _, label, _ in bar_segments:
         legend_labels.append(label)
@@ -428,6 +476,7 @@ def figure_outcomes(runs):
         legend_labels,
         loc="outside upper center",
         ncol=4,
+        handler_map={exp_lambda_handle: EqualDashesHandler()},
     )
     save(fig, f"{FIGURES_DIR}/exp1_outcomes.pdf")
 
