@@ -1,5 +1,6 @@
 import glob
 import json
+import math
 import os
 import statistics
 from collections import Counter
@@ -8,7 +9,7 @@ import matplotlib.lines
 import matplotlib.patches
 import matplotlib.pyplot as plt
 
-from plot import save, setup_style, to_table
+from plot import BAR_BLUES, save, setup_style, to_table
 
 
 # ---------------------------------------------------------------------------
@@ -276,10 +277,13 @@ def table_transpiled(runs):
 
 def figure_outcomes(runs):
     # 1. collect: pool the counts of the hardware runs per device and level over all days,
-    #    share of the hardware and noise model runs per device, level and day
+    #    share of the hardware and noise model runs per device, level and day,
+    #    first hardware run per device, level and day
+    #    (all runs of a day share circuit and calibration)
     hardware_counts = {}  # {(device, level): Counter}
     hardware_shares = {}  # {(device, level, day): [share per run]}
     noisy_shares = {}  # {(device, level, day): [share per run]}
+    first_runs = {}  # {(device, level, day): run}
     for run in runs:
         key = (run["device"], run["level"])
         if run["mode"] == "hardware":
@@ -290,25 +294,26 @@ def figure_outcomes(runs):
             if day_key not in hardware_shares:
                 hardware_shares[day_key] = []
             hardware_shares[day_key].append(share(run["counts"]))
+            if day_key not in first_runs:
+                first_runs[day_key] = run
         if run["mode"] == "noisy":
             day_key = (run["device"], run["level"], run["day"])
             if day_key not in noisy_shares:
                 noisy_shares[day_key] = []
             noisy_shares[day_key].append(share(run["counts"]))
 
-    # 2. calculate: share per ideal outcome from the pooled counts, the rest is incorrect;
+    # 2. calculate: ideal share from the pooled counts, the rest is incorrect;
     #    hardware spread: standard deviation of the daily means of the ideal share
     #    (same runs and shots every day, so pooled share = mean of the daily means);
-    #    noise model: mean of the runs of a day, then mean over the days
-    segments = {}  # {(device, level): {0: ..., 64: ..., 128: ..., 192: ..., "incorrect": ...}}
+    #    noise model: mean of the runs of a day, then mean over the days;
+    #    e^-lambda: 100 * exp(-lambda) of a day, then mean over the days
+    segments = {}  # {(device, level): {"ideal": ..., "incorrect": ...}}
     for key, counts in hardware_counts.items():
-        shares = {}
-        for outcome in IDEAL_OUTCOMES:
-            shares[outcome] = share(counts, [outcome])
-        shares["incorrect"] = 100 - sum(shares.values())
-        segments[key] = shares
+        ideal = share(counts)
+        segments[key] = {"ideal": ideal, "incorrect": 100 - ideal}
     spread = {}  # {(device, level): sd of the daily means}
     noise_model = {}  # {(device, level): share}
+    exp_lambda = {}  # {(device, level): 100 * e^-lambda}
     for device, _ in DEVICES:
         for level in LEVELS:
             hardware_day_means = []
@@ -321,13 +326,17 @@ def figure_outcomes(runs):
             for day in RESULT_DAYS:
                 day_means.append(statistics.mean(noisy_shares[(device, level, day)]))
             noise_model[(device, level)] = statistics.mean(day_means)
+            day_values = []
+            for day in RESULT_DAYS:
+                lambda_day = sum(
+                    expected_errors(first_runs[(device, level, day)]).values()
+                )
+                day_values.append(100 * math.exp(-lambda_day))
+            exp_lambda[(device, level)] = statistics.mean(day_values)
 
     # 3. write
     bar_segments = [
-        (0, "Outcome 0", "#08306b"),
-        (64, "Outcome 64", "#2171b5"),
-        (128, "Outcome 128", "#6baed6"),
-        (192, "Outcome 192", "#a3d0f5"),
+        ("ideal", "Ideal outcomes", BAR_BLUES[1]),
         ("incorrect", "Incorrect outcomes", "#e0e0e0"),
     ]
     fig, axes = plt.subplots(
@@ -358,12 +367,12 @@ def figure_outcomes(runs):
                 new_bottom.append(b + h)
             bottom = new_bottom
 
-        # ideal share = top of the four ideal segments, SD across days centred on the bar,
-        # above the noise model line (higher zorder)
+        # ideal share = top of the ideal segment, SD across days centred on the bar,
+        # above the prediction lines (higher zorder)
         ideal_tops = []
         errors = []
         for level in LEVELS:
-            ideal_tops.append(100 - segments[(device, level)]["incorrect"])
+            ideal_tops.append(segments[(device, level)]["ideal"])
             errors.append(spread[(device, level)])
         ax.errorbar(
             LEVELS,
@@ -378,20 +387,26 @@ def figure_outcomes(runs):
             zorder=4,
         )
 
-        # noise model as a thin line as wide as the bar, above the bars, below the error bars
-        lines = []
-        for level in LEVELS:
-            lines.append(noise_model[(device, level)])
-        ax.hlines(
-            lines,
-            [level - 0.30 for level in LEVELS],
-            [level + 0.30 for level in LEVELS],
-            colors="#9a9994",
-            lw=1.2,
-            linestyles="solid",
-            label="Noise model",
-            zorder=3.5,
-        )
+        # the two predictions as thin lines as wide as the bar, above the bars,
+        # below the error bars
+        predictions = [
+            (noise_model, "Noise model", "#D55E00", "solid"),
+            (exp_lambda, r"$e^{-\lambda}$", "#D55E00", (0, (2.6, 1.6))),
+        ]
+        for values, label, colour, style in predictions:
+            lines = []
+            for level in LEVELS:
+                lines.append(values[(device, level)])
+            ax.hlines(
+                lines,
+                [level - 0.30 for level in LEVELS],
+                [level + 0.30 for level in LEVELS],
+                colors=colour,
+                lw=1.4,
+                linestyles=style,
+                label=label,
+                zorder=3.5,
+            )
 
     axes[0].set_ylabel("Share of shots (%)")
     axes[0].set_ylim(0, 100)
@@ -403,6 +418,7 @@ def figure_outcomes(runs):
     for _, label, _ in bar_segments:
         legend_labels.append(label)
     legend_labels.append("Noise model")
+    legend_labels.append(r"$e^{-\lambda}$")
     legend_labels.append("SD across days")
     legend_handles = []
     for label in legend_labels:

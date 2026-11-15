@@ -6,6 +6,9 @@ matplotlib.use("Agg")  # write files only, no window
 import matplotlib.font_manager
 import matplotlib.pyplot as plt
 
+# blue palette for bars, dark to light
+BAR_BLUES = ["#2171B5", "#6BAED6", "#BDD7E7"]
+
 
 # font, axes and grid for all figures
 def setup_style():

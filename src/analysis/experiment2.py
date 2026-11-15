@@ -5,7 +5,7 @@ from collections import Counter
 
 import matplotlib.pyplot as plt
 
-from plot import save, setup_style, to_table
+from plot import BAR_BLUES, save, setup_style, to_table
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +417,7 @@ def figure_outcomes(runs):
     names = []
     for name, _, _ in CONFIGURATIONS:
         names.append(name)
-    day_colours = ["#08306b", "#2171b5", "#6baed6"]  # one per measurement day
+    day_colours = BAR_BLUES  # one per measurement day
     bar_width = 0.25
     fig, ax = plt.subplots(figsize=(6.2, 2.5), layout="constrained")
     ax.set_xticks(range(len(names)))
