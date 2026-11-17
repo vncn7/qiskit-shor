@@ -21,6 +21,9 @@ for backend in kingston fez marrakesh; do
     done
 done
 
+# IBM calibration of the day per device, for the noise model with day calibration
+docker compose run --rm qiskit-shor src/fetch_calibration.py $day
+
 # Noise model: one after the other, the simulator needs the CPU
 for backend in kingston fez marrakesh; do
     for opt in 0 1 2 3; do
@@ -30,6 +33,22 @@ for backend in kingston fez marrakesh; do
                 -e BACKEND_NAME=ibm_$backend \
                 -e OPTIMISATION_LEVEL=$opt \
                 -e RUN_ID=$i \
+                -e RESULT_DIR=results/experiment1/runs/$day \
+                qiskit-shor src/circuits/shor15_compiled.py
+        done
+    done
+done
+
+# Noise model with the calibration of the day instead of the fixed snapshot
+for backend in kingston fez marrakesh; do
+    for opt in 0 1 2 3; do
+        for i in 1 2 3 4 5; do
+            docker compose run --rm \
+                -e BACKEND_MODE=noisy_day \
+                -e BACKEND_NAME=ibm_$backend \
+                -e OPTIMISATION_LEVEL=$opt \
+                -e RUN_ID=$i \
+                -e CALIBRATION_FILE=results/experiment1/calibration/ibm_${backend}_$day.json \
                 -e RESULT_DIR=results/experiment1/runs/$day \
                 qiskit-shor src/circuits/shor15_compiled.py
         done

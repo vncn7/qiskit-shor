@@ -5,7 +5,7 @@ from collections import Counter
 
 import matplotlib.pyplot as plt
 
-from plot import BAR_BLUES, save, setup_style, to_table
+from plot import BAR_BLUES, save, save_values, setup_style, to_table
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +458,10 @@ def figure_outcomes(runs):
     handles, labels = ax.get_legend_handles_labels()
     fig.legend(handles, labels, loc="outside upper center", ncol=len(RESULT_DAYS))
     save(fig, f"{FIGURES_DIR}/exp2_outcomes.pdf")
+    save_values(
+        f"{FIGURES_DIR}/exp2_outcomes.pdf",
+        {"means": means, "spread": spread, "shares": shares},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +544,7 @@ def figure_distribution(runs, days, path):
     axes[0].set_ylim(0, 25)
     axes[0].set_yticks([0, 10, 20])
     save(fig, path)
+    save_values(path, {"peaks_per_day": peaks_per_day, "shares_per_day": shares_per_day})
 
 
 # ---------------------------------------------------------------------------
@@ -621,6 +626,17 @@ def figure_readout(runs):
     axes[-1].set_xticklabels(bit_labels)
     fig.colorbar(image, ax=axes, label=r"Readout error $\varepsilon$")
     save(fig, f"{FIGURES_DIR}/exp2_readout.pdf")
+
+    # the rows of the heatmaps per day, one value per control register bit
+    calibration_by_day = {}  # {day: [readout error per bit]}
+    m3_by_day = {}  # {day: [readout error per bit]}
+    for index, day in enumerate(RESULT_DAYS):
+        calibration_by_day[day] = calibration_rows[index]
+        m3_by_day[day] = m3_rows[index]
+    save_values(
+        f"{FIGURES_DIR}/exp2_readout.pdf",
+        {"calibration": calibration_by_day, "m3": m3_by_day},
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import QiskitRuntimeService
 from qiskit_ibm_runtime import SamplerV2 as Sampler
 from qiskit_ibm_runtime.fake_provider import FakeFez, FakeKingston, FakeMarrakesh
+from qiskit_ibm_runtime.utils.backend_decoder import properties_from_server_data
 
 
 # Set by docker compose
@@ -19,6 +20,7 @@ OPTIMISATION_LEVEL = int(os.environ.get("OPTIMISATION_LEVEL", "1"))
 RUN_ID = os.environ.get("RUN_ID")
 RESULT_DIR = os.environ.get("RESULT_DIR")  # default: results/<date>
 MITIGATION = os.environ.get("MITIGATION")  # experiment 2 only, see MITIGATIONS
+CALIBRATION_FILE = os.environ.get("CALIBRATION_FILE")  # noisy_day only, see get_day_backend
 
 SEED_TRANSPILER = 1337  # same optimisation level --> same transpiled circuit
 
@@ -59,6 +61,26 @@ def get_hardware_backend(name):
     return service.backend(name)
 
 
+# noisy_day: fake backend with the original IBM calibration of a measurement day
+#
+# CALIBRATION_FILE is a calibration file written by src/fetch_calibration.py. It is
+# loaded the way the fake backend loads its own properties JSON and replaces it.
+#
+# _props_dict and _target are private attributes of the fake backend, this relies
+# on the pinned qiskit-ibm-runtime 0.49.0.
+def get_day_backend(name):
+    with open(CALIBRATION_FILE) as file:
+        props = json.load(file)
+    if props["backend_name"] != name:
+        raise ValueError(f"CALIBRATION_FILE is from {props['backend_name']}, not from {name}")
+    properties_from_server_data(props)  # turns the dates into datetime objects, in place
+
+    fake_backend = get_fake_backend(name)
+    fake_backend._props_dict = props
+    fake_backend._target = None  # rebuilt from the new properties on next access
+    return fake_backend
+
+
 # get backend or noise model
 def get_backend():
     if BACKEND_MODE == "ideal":
@@ -68,6 +90,12 @@ def get_backend():
     if BACKEND_MODE == "noisy":
         fake_backend = get_fake_backend(BACKEND_NAME)
         print(f"Running on noise model of: {fake_backend.name}")
+        return AerSimulator.from_backend(fake_backend), fake_backend
+
+    if BACKEND_MODE == "noisy_day":
+        fake_backend = get_day_backend(BACKEND_NAME)
+        print(f"Running on noise model of: {fake_backend.name}")
+        print(f"Calibration timestamp: {fake_backend.properties().last_update_date}")
         return AerSimulator.from_backend(fake_backend), fake_backend
 
     if BACKEND_MODE == "hardware":
@@ -223,6 +251,10 @@ def build_metadata(qc, isa, backend, fake_backend, job, counts, shots, timestamp
     elif BACKEND_MODE == "noisy":
         execution["noise_model"] = fake_backend.name
         metadata["calibration"] = calibration_metadata(fake_backend.properties())
+    elif BACKEND_MODE == "noisy_day":
+        execution["noise_model"] = "day calibration"
+        execution["calibration_source"] = os.path.basename(CALIBRATION_FILE)
+        metadata["calibration"] = calibration_metadata(fake_backend.properties())
 
     return metadata
 
@@ -264,7 +296,8 @@ def write_result(metadata, timestamp):
 def run(qc, shots=1024):
     if len(qc.cregs) != 1:
         raise ValueError("Runner expects exactly one classical register")
-    # twirling and DD are silently ignored in local testing mode, so refuse them there
+    # twirling and DD are silently ignored in local testing mode (ideal, noisy,
+    # noisy_day), so refuse them there
     if SAMPLER_OPTIONS and BACKEND_MODE != "hardware":
         raise ValueError("Sampler options only take effect on hardware")
 

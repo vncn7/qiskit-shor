@@ -45,7 +45,8 @@ LAYOUT_LEVELS = [2, 3]
 DAY_COLOURS = ["#0072B2", "#009E73", "#D55E00", "#E69F00", "#762A83", "#56B4E9"]
 
 # files every day must have: 3 devices * 4 levels * 5 runs, 1 ideal run per level
-EXPECTED_FILES = {"hardware": 60, "noisy": 60, "ideal": 4}
+# (noisy: fixed noise model, noisy_day: daily noise model)
+EXPECTED_FILES = {"hardware": 60, "noisy": 60, "noisy_day": 60, "ideal": 4}
 
 FIGURES_DIR = "results/experiment1/figures"
 TABLES_DIR = "results/experiment1/tables"
@@ -59,6 +60,8 @@ def check_day(day):
     found = {}
     for mode in EXPECTED_FILES:
         found[mode] = len(glob.glob(f"{day_dir}/shor15_compiled_{mode}_*.json"))
+    # the pattern of noisy also matches the noisy_day files
+    found["noisy"] -= found["noisy_day"]
     if found != EXPECTED_FILES:
         raise ValueError(f"{day}: expected {EXPECTED_FILES}, found {found}")
 
@@ -272,7 +275,7 @@ def table_transpiled(runs):
 
 
 # ---------------------------------------------------------------------------
-# exp1_outcomes.pdf: share of hardware shots per ideal outcome, noise model as line
+# exp1_outcomes.pdf: share of hardware shots per ideal outcome, daily noise model as line
 # ---------------------------------------------------------------------------
 
 
@@ -311,12 +314,12 @@ class EqualDashesHandler(matplotlib.legend_handler.HandlerBase):
 
 def figure_outcomes(runs):
     # 1. collect: pool the counts of the hardware runs per device and level over all days,
-    #    share of the hardware and noise model runs per device, level and day,
+    #    share of the hardware and daily noise model runs per device, level and day,
     #    first hardware run per device, level and day
     #    (all runs of a day share circuit and calibration)
     hardware_counts = {}  # {(device, level): Counter}
     hardware_shares = {}  # {(device, level, day): [share per run]}
-    noisy_shares = {}  # {(device, level, day): [share per run]}
+    noisy_day_shares = {}  # {(device, level, day): [share per run]}
     first_runs = {}  # {(device, level, day): run}
     for run in runs:
         key = (run["device"], run["level"])
@@ -330,23 +333,23 @@ def figure_outcomes(runs):
             hardware_shares[day_key].append(share(run["counts"]))
             if day_key not in first_runs:
                 first_runs[day_key] = run
-        if run["mode"] == "noisy":
+        if run["mode"] == "noisy_day":
             day_key = (run["device"], run["level"], run["day"])
-            if day_key not in noisy_shares:
-                noisy_shares[day_key] = []
-            noisy_shares[day_key].append(share(run["counts"]))
+            if day_key not in noisy_day_shares:
+                noisy_day_shares[day_key] = []
+            noisy_day_shares[day_key].append(share(run["counts"]))
 
     # 2. calculate: ideal share from the pooled counts, the rest is incorrect;
     #    hardware spread: standard deviation of the daily means of the ideal share
     #    (same runs and shots every day, so pooled share = mean of the daily means);
-    #    noise model: mean of the runs of a day, then mean over the days;
+    #    daily noise model: mean of the runs of a day, then mean over the days;
     #    e^-lambda: 100 * exp(-lambda) of a day, then mean over the days
     segments = {}  # {(device, level): {"ideal": ..., "incorrect": ...}}
     for key, counts in hardware_counts.items():
         ideal = share(counts)
         segments[key] = {"ideal": ideal, "incorrect": 100 - ideal}
     spread = {}  # {(device, level): sd of the daily means}
-    noise_model = {}  # {(device, level): share}
+    daily_noise_model = {}  # {(device, level): share}
     exp_lambda = {}  # {(device, level): 100 * e^-lambda}
     for device, _ in DEVICES:
         for level in LEVELS:
@@ -358,8 +361,10 @@ def figure_outcomes(runs):
             spread[(device, level)] = statistics.stdev(hardware_day_means)
             day_means = []
             for day in RESULT_DAYS:
-                day_means.append(statistics.mean(noisy_shares[(device, level, day)]))
-            noise_model[(device, level)] = statistics.mean(day_means)
+                day_means.append(
+                    statistics.mean(noisy_day_shares[(device, level, day)])
+                )
+            daily_noise_model[(device, level)] = statistics.mean(day_means)
             day_values = []
             for day in RESULT_DAYS:
                 lambda_day = sum(
@@ -422,17 +427,17 @@ def figure_outcomes(runs):
 
         # the two predictions as thin lines slightly wider than the bar, above the bars,
         # below the error bars
-        noise_lines = []
+        daily_lines = []
         for level in LEVELS:
-            noise_lines.append(noise_model[(device, level)])
+            daily_lines.append(daily_noise_model[(device, level)])
         ax.hlines(
-            noise_lines,
+            daily_lines,
             [level - 0.35 for level in LEVELS],
             [level + 0.35 for level in LEVELS],
             colors="#D55E00",
             lw=1.4,
             capstyle="butt",
-            label="Noise model",
+            label="Daily noise model",
             zorder=3.5,
         )
 
@@ -465,7 +470,7 @@ def figure_outcomes(runs):
     legend_labels = []
     for _, label, _ in bar_segments:
         legend_labels.append(label)
-    legend_labels.append("Noise model")
+    legend_labels.append("Daily noise model")
     legend_labels.append(r"$e^{-\lambda}$")
     legend_labels.append("SD across days")
     legend_handles = []
@@ -786,15 +791,17 @@ def figure_layout(runs):
 
 # ---------------------------------------------------------------------------
 # share_per_day.tex: share of ideal outcomes on hardware per device, level and day,
-# plus the noise model
+# plus the fixed and the daily noise model
 # ---------------------------------------------------------------------------
 
 
 def table_share_per_day(runs):
     # 1. collect: share per hardware run by device, level and day,
-    #    share per noise model run by device and level (all days together)
+    #    share per fixed and per daily noise model run by device and level
+    #    (all days together)
     shares = {}  # {(device, level, day): [share per run]}
     noisy_shares = {}  # {(device, level): [share per run]}
+    noisy_day_shares = {}  # {(device, level): [share per run]}
     for run in runs:
         if run["mode"] == "hardware":
             key = (run["device"], run["level"], run["day"])
@@ -806,8 +813,14 @@ def table_share_per_day(runs):
             if key not in noisy_shares:
                 noisy_shares[key] = []
             noisy_shares[key].append(share(run["counts"]))
+        if run["mode"] == "noisy_day":
+            key = (run["device"], run["level"])
+            if key not in noisy_day_shares:
+                noisy_day_shares[key] = []
+            noisy_day_shares[key].append(share(run["counts"]))
 
-    # 2. calculate: mean and standard deviation over the runs of a day
+    # 2. calculate: mean and standard deviation over the runs of a day,
+    #    for the noise models over the runs of all days
     cells = {}  # {(device, level, day): "$mean \pm sd$"}
     for key, values in shares.items():
         cells[key] = (
@@ -816,6 +829,11 @@ def table_share_per_day(runs):
     noisy_cells = {}  # {(device, level): "$mean \pm sd$"}
     for key, values in noisy_shares.items():
         noisy_cells[key] = (
+            f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
+        )
+    noisy_day_cells = {}  # {(device, level): "$mean \pm sd$"}
+    for key, values in noisy_day_shares.items():
+        noisy_day_cells[key] = (
             f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
         )
 
@@ -830,9 +848,13 @@ def table_share_per_day(runs):
             for level in LEVELS:
                 row.append(cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
-        row = ["", "Noise model"]
+        row = ["", "Fixed noise model"]
         for level in LEVELS:
             row.append(noisy_cells[(device, level)])
+        rows.append(" & ".join(row) + " \\\\")
+        row = ["", "Daily noise model"]
+        for level in LEVELS:
+            row.append(noisy_day_cells[(device, level)])
         rows.append(" & ".join(row) + " \\\\")
     level_columns = []
     for level in LEVELS:
@@ -854,14 +876,14 @@ def table_share_per_day(runs):
 
 # ---------------------------------------------------------------------------
 # lambda_per_day.tex: circuit fault rate on hardware per device, level and day,
-# plus the noise model
+# plus the fixed noise model
 # ---------------------------------------------------------------------------
 
 
 def table_lambda_per_day(runs):
     # 1. collect: first hardware run per device, level and day
     #    (all runs of a day share circuit and calibration),
-    #    first noise model run per device and level
+    #    first fixed noise model run per device and level
     #    (all its runs share circuit and calibration, the snapshot is fixed)
     first_runs = {}  # {(device, level, day): run}
     first_noisy_runs = {}  # {(device, level): run}
@@ -883,7 +905,7 @@ def table_lambda_per_day(runs):
     for key, run in first_noisy_runs.items():
         noisy_cells[key] = f"${sum(expected_errors(run).values()):.2f}$"
 
-    # 3. write: one row per device and day, levels as columns; the noise model after the days
+    # 3. write: one row per device and day, levels as columns; the fixed noise model after the days
     rows = []
     for device, name in DEVICES:
         if rows:
@@ -894,7 +916,7 @@ def table_lambda_per_day(runs):
             for level in LEVELS:
                 row.append(cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
-        row = ["", "Noise model"]
+        row = ["", "Fixed noise model"]
         for level in LEVELS:
             row.append(noisy_cells[(device, level)])
         rows.append(" & ".join(row) + " \\\\")
@@ -917,19 +939,19 @@ def table_lambda_per_day(runs):
 
 
 # ---------------------------------------------------------------------------
-# calibration.tex: calibration medians per device and day, plus the noise model
+# calibration.tex: calibration medians per device and day, plus the fixed noise model
 # ---------------------------------------------------------------------------
 
 
 def table_calibration(runs):
     # 1. collect: per device and day the calibration of the hardware runs (all runs of a day
-    #    share it), per device the calibration of the noise model (fixed snapshot)
+    #    share it), per device the calibration of the fixed noise model (fixed snapshot)
     calibrations = {}  # {(device, source): calibration}
     for run in runs:
         if run["mode"] == "hardware":
             key = (run["device"], DAY_LABELS[run["day"]])
         elif run["mode"] == "noisy":
-            key = (run["device"], "Noise model")
+            key = (run["device"], "Fixed noise model")
         else:
             continue
         if key in calibrations:
@@ -954,7 +976,7 @@ def table_calibration(runs):
         sources = []
         for day in RESULT_DAYS:
             sources.append(DAY_LABELS[day])
-        sources.append("Noise model")
+        sources.append("Fixed noise model")
         for index, source in enumerate(sources):
             m = medians[(device, source)]
             device_cell = name if index == 0 else ""
