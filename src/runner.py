@@ -5,6 +5,7 @@ from datetime import datetime
 import qiskit
 import qiskit_aer
 import qiskit_ibm_runtime
+from qiskit import qpy
 from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import QiskitRuntimeService
@@ -21,6 +22,7 @@ RUN_ID = os.environ.get("RUN_ID")
 RESULT_DIR = os.environ.get("RESULT_DIR")  # default: results/<date>
 MITIGATION = os.environ.get("MITIGATION")  # experiment 2 only, see MITIGATIONS
 CALIBRATION_FILE = os.environ.get("CALIBRATION_FILE")  # noisy_day only, see get_day_backend
+CIRCUIT_FILE = os.environ.get("CIRCUIT_FILE")  # noisy_day only, see load_hardware_circuit
 
 SEED_TRANSPILER = 1337  # same optimisation level --> same transpiled circuit
 
@@ -115,6 +117,17 @@ def transpile_circuit(qc, backend):
         seed_transpiler=SEED_TRANSPILER,
     )
     return pm.run(qc)
+
+
+# noisy_day: the circuit the hardware job ran, already transpiled, written by
+# src/fetch_calibration.py. It keeps its layout, so the physical qubits are those
+# of the hardware run.
+def load_hardware_circuit():
+    with open(CIRCUIT_FILE, "rb") as file:
+        isa = qpy.load(file)[0]
+    if isa.layout is None:
+        raise ValueError(f"CIRCUIT_FILE has no layout: {CIRCUIT_FILE}")
+    return isa
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +267,7 @@ def build_metadata(qc, isa, backend, fake_backend, job, counts, shots, timestamp
     elif BACKEND_MODE == "noisy_day":
         execution["noise_model"] = "day calibration"
         execution["calibration_source"] = os.path.basename(CALIBRATION_FILE)
+        execution["circuit_source"] = os.path.basename(CIRCUIT_FILE)
         metadata["calibration"] = calibration_metadata(fake_backend.properties())
 
     return metadata
@@ -302,7 +316,10 @@ def run(qc, shots=1024):
         raise ValueError("Sampler options only take effect on hardware")
 
     backend, fake_backend = get_backend()
-    isa = transpile_circuit(qc, backend)
+    if BACKEND_MODE == "noisy_day":
+        isa = load_hardware_circuit()  # not transpiled again
+    else:
+        isa = transpile_circuit(qc, backend)
 
     job = Sampler(mode=backend, options=SAMPLER_OPTIONS).run([isa], shots=shots)
     if BACKEND_MODE == "hardware":

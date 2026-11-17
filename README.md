@@ -43,7 +43,8 @@ docker compose run --rm \
 
 Run on the daily noise model: the same fake backend, but its calibration is
 replaced by the IBM calibration of a measurement day (see `src/fetch_calibration.py`
-below):
+below). The daily noise model simulates the circuit of the hardware job instead
+of transpiling it again, so physical qubits and gates are those of the hardware run:
 
 ```bash
 docker compose run --rm \
@@ -51,6 +52,7 @@ docker compose run --rm \
   -e BACKEND_NAME=ibm_kingston \
   -e OPTIMISATION_LEVEL=1 \
   -e CALIBRATION_FILE=results/experiment1/calibration/ibm_kingston_20260911.json \
+  -e CIRCUIT_FILE=results/experiment1/calibration/ibm_kingston_20260911_opt1.qpy \
   qiskit-shor src/circuits/shor15_compiled.py
 ```
 
@@ -69,6 +71,8 @@ BACKEND_NAME         ibm_kingston | ibm_fez | ibm_marrakesh
 RESULT_DIR           where the result file goes, default results/<date>
 CALIBRATION_FILE     noisy_day only: calibration file of the same device, written by
                      src/fetch_calibration.py
+CIRCUIT_FILE         noisy_day only: circuit of the hardware job of the same device
+                     and level, written by src/fetch_calibration.py
 MITIGATION           experiment 2 only: raw | twirling | dd | both
 ```
 
@@ -87,8 +91,10 @@ After the hardware runs the script calls `src/fetch_calibration.py <date>`. It
 fetches the IBM calibration (backend properties) of the first hardware job of
 every device on that day and writes it, in the format of the properties JSON of
 the fake backends, to `results/experiment1/calibration/<device>_<date>.json`.
+It also saves the circuit of the first hardware job of every device and level
+(transpiled, with its layout) as `<device>_<date>_opt<level>.qpy` next to it.
 It requires `IBM_TOKEN` and uses no QPU time. The runs on the daily noise model
-(`noisy_day`) load this file. All runs land in `results/experiment1/runs/<date>/`.
+(`noisy_day`) load these files. All runs land in `results/experiment1/runs/<date>/`.
 
 The `noisy_day` runs of the five measurement days (2026-09-11, 2026-09-24,
 2026-10-12, 2026-10-27, 2026-11-10) were added after the measurement period, on

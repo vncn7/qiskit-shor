@@ -49,6 +49,7 @@ for backend in kingston fez marrakesh; do
                 -e OPTIMISATION_LEVEL=$opt \
                 -e RUN_ID=$i \
                 -e CALIBRATION_FILE=results/experiment1/calibration/ibm_${backend}_$day.json \
+                -e CIRCUIT_FILE=results/experiment1/calibration/ibm_${backend}_${day}_opt$opt.qpy \
                 -e RESULT_DIR=results/experiment1/runs/$day \
                 qiskit-shor src/circuits/shor15_compiled.py
         done
