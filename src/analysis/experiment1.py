@@ -45,7 +45,7 @@ LAYOUT_LEVELS = [2, 3]
 DAY_COLOURS = ["#0072B2", "#009E73", "#D55E00", "#E69F00", "#762A83", "#56B4E9"]
 
 # files every day must have: 3 devices * 4 levels * 5 runs, 1 ideal run per level
-# (noisy: fixed noise model, noisy_day: daily noise model)
+# (noisy: fake backend, noisy_day: noisy simulation with the calibration of the day)
 EXPECTED_FILES = {"hardware": 60, "noisy": 60, "noisy_day": 60, "ideal": 4}
 
 FIGURES_DIR = "results/experiment1/figures"
@@ -275,7 +275,7 @@ def table_transpiled(runs):
 
 
 # ---------------------------------------------------------------------------
-# exp1_outcomes.pdf: share of hardware shots per ideal outcome, daily noise model as line
+# exp1_outcomes.pdf: share of hardware shots per ideal outcome, noisy simulation as line
 # ---------------------------------------------------------------------------
 
 
@@ -314,7 +314,7 @@ class EqualDashesHandler(matplotlib.legend_handler.HandlerBase):
 
 def figure_outcomes(runs):
     # 1. collect: pool the counts of the hardware runs per device and level over all days,
-    #    share of the hardware and daily noise model runs per device, level and day,
+    #    share of the hardware and noisy simulation runs per device, level and day,
     #    first hardware run per device, level and day
     #    (all runs of a day share circuit and calibration)
     hardware_counts = {}  # {(device, level): Counter}
@@ -342,7 +342,7 @@ def figure_outcomes(runs):
     # 2. calculate: ideal share from the pooled counts, the rest is incorrect;
     #    hardware spread: standard deviation of the daily means of the ideal share
     #    (same runs and shots every day, so pooled share = mean of the daily means);
-    #    daily noise model: mean of the runs of a day, then mean over the days;
+    #    noisy simulation: mean of the runs of a day, then mean over the days;
     #    e^-lambda: 100 * exp(-lambda) of a day, then mean over the days
     segments = {}  # {(device, level): {"ideal": ..., "incorrect": ...}}
     for key, counts in hardware_counts.items():
@@ -437,7 +437,7 @@ def figure_outcomes(runs):
             colors="#D55E00",
             lw=1.4,
             capstyle="butt",
-            label="Daily noise model",
+            label="Simulation",
             zorder=3.5,
         )
 
@@ -466,12 +466,12 @@ def figure_outcomes(runs):
     for handle, label in zip(handles, labels):
         handle_by_label[label] = handle
     exp_lambda_handle = matplotlib.lines.Line2D([], [], color="#D55E00", lw=1.4)
-    handle_by_label[r"$e^{-\lambda}$"] = exp_lambda_handle
+    handle_by_label[r"Estimate $e^{-\lambda}$"] = exp_lambda_handle
     legend_labels = []
     for _, label, _ in bar_segments:
         legend_labels.append(label)
-    legend_labels.append("Daily noise model")
-    legend_labels.append(r"$e^{-\lambda}$")
+    legend_labels.append("Simulation")
+    legend_labels.append(r"Estimate $e^{-\lambda}$")
     legend_labels.append("SD across days")
     legend_handles = []
     for label in legend_labels:
@@ -790,40 +790,44 @@ def figure_layout(runs):
 
 
 # ---------------------------------------------------------------------------
-# share_per_day.tex: share of ideal outcomes on hardware per device, level and day,
-# plus the fixed and the daily noise model
+# share_per_day.tex: share of ideal outcomes per device, level and day on hardware
+# and in the noisy simulation, plus the fake backend
 # ---------------------------------------------------------------------------
 
 
 def table_share_per_day(runs):
-    # 1. collect: share per hardware run by device, level and day,
-    #    share per fixed and per daily noise model run by device and level
-    #    (all days together)
+    # 1. collect: share per hardware and per noisy simulation run by device, level
+    #    and day, share per fake backend run by device and level (all days together)
     shares = {}  # {(device, level, day): [share per run]}
+    noisy_day_shares = {}  # {(device, level, day): [share per run]}
     noisy_shares = {}  # {(device, level): [share per run]}
-    noisy_day_shares = {}  # {(device, level): [share per run]}
     for run in runs:
         if run["mode"] == "hardware":
             key = (run["device"], run["level"], run["day"])
             if key not in shares:
                 shares[key] = []
             shares[key].append(share(run["counts"]))
+        if run["mode"] == "noisy_day":
+            key = (run["device"], run["level"], run["day"])
+            if key not in noisy_day_shares:
+                noisy_day_shares[key] = []
+            noisy_day_shares[key].append(share(run["counts"]))
         if run["mode"] == "noisy":
             key = (run["device"], run["level"])
             if key not in noisy_shares:
                 noisy_shares[key] = []
             noisy_shares[key].append(share(run["counts"]))
-        if run["mode"] == "noisy_day":
-            key = (run["device"], run["level"])
-            if key not in noisy_day_shares:
-                noisy_day_shares[key] = []
-            noisy_day_shares[key].append(share(run["counts"]))
 
     # 2. calculate: mean and standard deviation over the runs of a day,
-    #    for the noise models over the runs of all days
+    #    for the fake backend over the runs of all days
     cells = {}  # {(device, level, day): "$mean \pm sd$"}
     for key, values in shares.items():
         cells[key] = (
+            f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
+        )
+    noisy_day_cells = {}  # {(device, level, day): "$mean \pm sd$"}
+    for key, values in noisy_day_shares.items():
+        noisy_day_cells[key] = (
             f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
         )
     noisy_cells = {}  # {(device, level): "$mean \pm sd$"}
@@ -831,30 +835,28 @@ def table_share_per_day(runs):
         noisy_cells[key] = (
             f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
         )
-    noisy_day_cells = {}  # {(device, level): "$mean \pm sd$"}
-    for key, values in noisy_day_shares.items():
-        noisy_day_cells[key] = (
-            f"${statistics.mean(values):.1f} \\pm {statistics.stdev(values):.1f}$"
-        )
 
-    # 3. write
+    # 3. write: per day a hardware row (the date) and close below it a simulation row,
+    #    some space between the days, the fake backend after the days
     rows = []
     for device, name in DEVICES:
         if rows:
             rows.append(r"\midrule")
         for day in RESULT_DAYS:
+            if day != RESULT_DAYS[0]:
+                rows.append(r"\addlinespace")
             device_cell = name if day == RESULT_DAYS[0] else ""
             row = [device_cell, DAY_LABELS[day]]
             for level in LEVELS:
                 row.append(cells[(device, level, day)])
+            rows.append(" & ".join(row) + " \\\\[-4pt]")
+            row = ["", "Simulation"]
+            for level in LEVELS:
+                row.append(noisy_day_cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
-        row = ["", "Fixed noise model"]
+        row = ["", "Fake backend"]
         for level in LEVELS:
             row.append(noisy_cells[(device, level)])
-        rows.append(" & ".join(row) + " \\\\")
-        row = ["", "Daily noise model"]
-        for level in LEVELS:
-            row.append(noisy_day_cells[(device, level)])
         rows.append(" & ".join(row) + " \\\\")
     level_columns = []
     for level in LEVELS:
@@ -867,7 +869,7 @@ def table_share_per_day(runs):
         header=[
             rf" & & \multicolumn{{{len(LEVELS)}}}{{c}}{{Ideal share $S$ (\%)}} \\",
             rf"\cmidrule(l){{3-{2 + len(LEVELS)}}}",
-            "Device & Day & " + " & ".join(level_columns) + " \\\\",
+            "Device & Source & " + " & ".join(level_columns) + " \\\\",
         ],
         rows=rows,
         width=r"\textwidth",
@@ -876,14 +878,14 @@ def table_share_per_day(runs):
 
 # ---------------------------------------------------------------------------
 # lambda_per_day.tex: circuit fault rate on hardware per device, level and day,
-# plus the fixed noise model
+# plus the fake backend
 # ---------------------------------------------------------------------------
 
 
 def table_lambda_per_day(runs):
     # 1. collect: first hardware run per device, level and day
     #    (all runs of a day share circuit and calibration),
-    #    first fixed noise model run per device and level
+    #    first fake backend run per device and level
     #    (all its runs share circuit and calibration, the snapshot is fixed)
     first_runs = {}  # {(device, level, day): run}
     first_noisy_runs = {}  # {(device, level): run}
@@ -905,7 +907,7 @@ def table_lambda_per_day(runs):
     for key, run in first_noisy_runs.items():
         noisy_cells[key] = f"${sum(expected_errors(run).values()):.2f}$"
 
-    # 3. write: one row per device and day, levels as columns; the fixed noise model after the days
+    # 3. write: one row per device and day, levels as columns; the fake backend after the days
     rows = []
     for device, name in DEVICES:
         if rows:
@@ -916,7 +918,7 @@ def table_lambda_per_day(runs):
             for level in LEVELS:
                 row.append(cells[(device, level, day)])
             rows.append(" & ".join(row) + " \\\\")
-        row = ["", "Fixed noise model"]
+        row = ["", "Fake backend"]
         for level in LEVELS:
             row.append(noisy_cells[(device, level)])
         rows.append(" & ".join(row) + " \\\\")
@@ -931,7 +933,7 @@ def table_lambda_per_day(runs):
         header=[
             rf" & & \multicolumn{{{len(LEVELS)}}}{{c}}{{Circuit fault rate $\lambda$}} \\",
             rf"\cmidrule(l){{3-{2 + len(LEVELS)}}}",
-            "Device & Day & " + " & ".join(level_columns) + " \\\\",
+            "Device & Source & " + " & ".join(level_columns) + " \\\\",
         ],
         rows=rows,
         width=r"\textwidth",
@@ -939,19 +941,19 @@ def table_lambda_per_day(runs):
 
 
 # ---------------------------------------------------------------------------
-# calibration.tex: calibration medians per device and day, plus the fixed noise model
+# calibration.tex: calibration medians per device and day, plus the fake backend
 # ---------------------------------------------------------------------------
 
 
 def table_calibration(runs):
     # 1. collect: per device and day the calibration of the hardware runs (all runs of a day
-    #    share it), per device the calibration of the fixed noise model (fixed snapshot)
+    #    share it), per device the calibration of the fake backend (fixed snapshot)
     calibrations = {}  # {(device, source): calibration}
     for run in runs:
         if run["mode"] == "hardware":
             key = (run["device"], DAY_LABELS[run["day"]])
         elif run["mode"] == "noisy":
-            key = (run["device"], "Fixed noise model")
+            key = (run["device"], "Fake backend")
         else:
             continue
         if key in calibrations:
@@ -976,13 +978,13 @@ def table_calibration(runs):
         sources = []
         for day in RESULT_DAYS:
             sources.append(DAY_LABELS[day])
-        sources.append("Fixed noise model")
+        sources.append("Fake backend")
         for index, source in enumerate(sources):
             m = medians[(device, source)]
             device_cell = name if index == 0 else ""
             rows.append(
-                f"{device_cell} & {source} & {m['T1_us']:.0f} & {m['T2_us']:.0f}"
-                f" & {m['readout']:.4f} & {m['single_qubit']:.5f} & {m['cz']:.4f} \\\\"
+                f"{device_cell} & {source} & ${m['T1_us']:.0f}$ & ${m['T2_us']:.0f}$"
+                f" & ${m['readout']:.4f}$ & ${m['single_qubit']:.5f}$ & ${m['cz']:.4f}$ \\\\"
             )
     to_table(
         f"{TABLES_DIR}/calibration.tex",
@@ -992,7 +994,7 @@ def table_calibration(runs):
         header=[
             r" & & & & \multicolumn{3}{c}{Error rate $\varepsilon$} \\",
             r"\cmidrule(l){5-7}",
-            r"Device & Day & $T_1$ (\si{\micro\second}) & $T_2$ (\si{\micro\second}) & Readout & SX, X & CZ \\",
+            r"Device & Source & $T_1$ (\si{\micro\second}) & $T_2$ (\si{\micro\second}) & Readout & SX, X & CZ \\",
         ],
         rows=rows,
         width=r"\textwidth",
